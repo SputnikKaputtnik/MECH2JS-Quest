@@ -1,13 +1,13 @@
+/** Frozen pre-optimization split-product implementation for CPU comparisons. */
 /**
  * Exact 64-bit integer products for the fixed-point code.
  *
  * The game's math leans on x86's 32x32->64 imul: matrix and trig code sums
  * three 64-bit products, shifts right 29 and adds bit 28 back to round. JS
  * doubles hold 53 bits, so a straight a*b loses the low bits exactly where
- * the rounding looks. The signed helper obtains the exact low word with
- * Math.imul and recovers the high word by rounding the residual; unsigned
- * products still split the operands into exact 16-bit partial products.
- * Results use (hi int32, lo uint32), checked against BigInt by fuzzing
+ * the rounding looks. These helpers split each operand into 16-bit halves so
+ * every partial product is exact, and carry the result as (hi int32, lo
+ * uint32). They are checked against a BigInt transcription by fuzzing
  * (test/unit/i64.test.ts).
  *
  * imul64/umul64 return through module-level registers to avoid allocating
@@ -30,12 +30,21 @@ export const regLo = (): number => rLo;
 export function imul64(a: number, b: number): void {
   a |= 0;
   b |= 0;
-  rLo = Math.imul(a, b) >>> 0;
-  // The true residual is exactly hi * 2^32. For signed int32 inputs,
-  // product and subtraction rounding contribute at most 1024 of error,
-  // hence less than 2^-21 after division. Rounding recovers hi exactly,
-  // even if a*b itself rounded across a low-word carry boundary.
-  rHi = Math.round((a * b - rLo) / TWO32) | 0;
+  const al = a & 0xffff;
+  const ah = a >> 16;
+  const bl = b & 0xffff;
+  const bh = b >> 16;
+  const mid = ah * bl + al * bh; // |mid| < 2^32, exact
+  const midLo = mid & 0xffff; // the low 16 bits survive ToInt32's wrap
+  const midHi = (mid - midLo) / 65536;
+  let l = al * bl + midLo * 65536; // < 2^33
+  let carry = 0;
+  if (l >= TWO32) {
+    l -= TWO32;
+    carry = 1;
+  }
+  rLo = l;
+  rHi = (ah * bh + midHi + carry) | 0;
 }
 
 /** hi:lo = (uint64) a * (uint64) b, both unsigned 32-bit. */

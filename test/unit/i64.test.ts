@@ -39,8 +39,22 @@ describe('i64', () => {
         expect(regHi()).toBe(Number(BigInt.asIntN(32, p >> 32n)));
         expect(regLo()).toBe(Number(p & 0xffffffffn));
       }),
-      { numRuns: 20000 },
+      { numRuns: 100000, seed: 642026 },
     );
+  });
+
+  it('imul64 recovers carry boundaries and signed extrema without losing low bits', () => {
+    const edges = new Set([0, -0x80000000, 0x7fffffff]);
+    for (let bit = 0; bit < 32; bit++) for (const offset of [-2, -1, 0, 1, 2]) {
+      edges.add((2 ** bit + offset) | 0);
+      edges.add((-(2 ** bit) + offset) | 0);
+    }
+    for (const a of edges) for (const b of edges) {
+      imul64(a, b);
+      const product = BigInt(a) * BigInt(b);
+      expect(regLo()).toBe(Number(BigInt.asUintN(32, product)));
+      expect(regHi()).toBe(Number(BigInt.asIntN(32, product >> 32n)));
+    }
   });
 
   it('umul64 matches BigInt', () => {

@@ -1,5 +1,7 @@
 /** @portOnly Frozen mission dot products, alternating reference/optimized CPU timings. */
-import { Acc64, dot3Negative } from '../../src/core/int/i64.ts';
+import { dot3Negative } from '../../src/core/int/i64.ts';
+import { Acc64 } from '../reference/i64.ts';
+import { runI64Benchmark } from './i64Benchmark.ts';
 
 export type CullInput = [number, number, number, number, number, number];
 
@@ -25,6 +27,7 @@ export async function runCullBenchmark(inputs: CullInput[]) {
   const mean = (key: keyof typeof rounds[number]) => rounds.reduce((sum, r) => sum + r[key], 0) / rounds.length;
   const fastCases = inputs.filter(([a, b, c, d, e, f]) => Math.abs(a * b) + Math.abs(c * d) + Math.abs(e * f) <= Number.MAX_SAFE_INTEGER).length;
   return { kind: 'isolated-backface-sign-cpu', polygons: inputs.length, fastCases, repeats, rounds,
+    fixedPoint: await runI64Benchmark(inputs),
     referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0,
     note: 'Milliseconds per frozen polygon set; excludes clipping, GPU work and XR frame timing.' };
 }
