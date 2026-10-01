@@ -1,3 +1,4 @@
+/** @portOnly Frozen pre-Wasm whole-update benchmark reference (055795b). */
 /**
  * The 2D the game draws into its VFX window - the HUD, the cockpit text, the
  * radar - painted over the 3D view through the game's palette.
@@ -31,9 +32,8 @@
  * @portOnly
  */
 import * as THREE from 'three';
-import { HUD_LAYER, type VfxWindow } from '../../engine/vfx/vfx.ts';
-import type { IndexedUniforms } from '../materials/indexedMaterial.ts';
-import { currentHudKernel, loadHudKernel } from '../wasm/hudKernel.ts';
+import { HUD_LAYER, type VfxWindow } from '../../src/engine/vfx/vfx.ts';
+import type { IndexedUniforms } from '../../src/render/materials/indexedMaterial.ts';
 
 // One aligned store per RGBA pixel. Keep the GPU byte layout independent of
 // native integer byte order (including the unused zero alpha byte).
@@ -170,9 +170,6 @@ function excludeUniforms(): { uExclude: { value: THREE.Vector4[] }; uExcludeN: {
 }
 
 export class HudOverlay {
-  /** Experimental A/B path; includes copies and retains JS fallback. */
-  wasmPacking = false;
-  async prepareWasmPacking(): Promise<void> { await loadHudKernel(); this.wasmPacking = true; }
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private tex: THREE.DataTexture | null = null;
@@ -297,10 +294,6 @@ export class HudOverlay {
       this.u.uWindow.value = this.tex;
       this.u.uWindowSize.value.set(w, h);
     }
-    if (this.wasmPacking) {
-      const s = currentHudKernel()?.pack(win, w, h, this.data);
-      if (s) return this.finishUpload(win, w, h, s[0]!, s[1]!, s[2]!, s[3]!, s[4]!, s[5]!, s[6]!, s[7]!, s[8]!, s[9]!, s[10]!);
-    }
     const d = this.packed;
     const b = win.buffer;
     const m = win.drawn;
@@ -329,11 +322,6 @@ export class HudOverlay {
         mRight = Math.max(mRight, x); mBottom = Math.max(mBottom, y);
       }
     }
-    return this.finishUpload(win, w, h, rx, ry, rn, rLeft, rTop, rRight, rBottom, mLeft, mTop, mRight, mBottom);
-  }
-
-  private finishUpload(win: VfxWindow, w: number, h: number, rx: number, ry: number, rn: number,
-    rLeft: number, rTop: number, rRight: number, rBottom: number, mLeft: number, mTop: number, mRight: number, mBottom: number): boolean {
     this.reticleCount = rn;
     if (rn > 0) this.reticleAt.set(rx / rn + 0.5, ry / rn + 0.5);
     // One source-pixel guard around inclusive bounds avoids cutting border
@@ -346,7 +334,7 @@ export class HudOverlay {
     bounds(this.reticleBounds, rLeft, rTop, rRight, rBottom);
     bounds(this.markerBounds, mLeft, mTop, mRight, mBottom);
     this.applyLayerBounds();
-    this.tex!.needsUpdate = true;
+    this.tex.needsUpdate = true;
     this.uploadedWindow = win;
     return true;
   }

@@ -10,6 +10,7 @@
   import { runHudCropComparison } from './hudCrop.ts';
   import { runLightingBenchmark } from './lightingBenchmark.ts';
   import { runResourceLifetimeCheck } from './resourceLifetime.ts';
+  import { loadHudKernel } from '../../src/render/wasm/hudKernel.ts';
   window.runQuestTests = async () => {
     const status = document.querySelector('#result');
     status.textContent = 'Running world comparison…';
@@ -18,6 +19,8 @@
     const wasmWorld = await runWorldBatchComparison('wasm');
     status.textContent = 'Running HUD comparison…';
     const hud = runHudCropComparison();
+    await loadHudKernel();
+    const wasmHud = runHudCropComparison(undefined, 'wasm');
     status.textContent = 'Running lighting CPU comparison…';
     const lighting = await runLightingBenchmark();
     status.textContent = 'Checking mission resource cleanup…';
@@ -25,7 +28,7 @@
     const result = {
       kind: 'offscreen-image-regression', xr: false,
       userAgent: navigator.userAgent, visibility: document.visibilityState,
-      world, wasmWorld, hud, lighting, resources,
+      world, wasmWorld, hud, wasmHud, lighting, resources,
       note: 'Executed on device; no XR/compositor FPS or thermal-performance claim.'
     };
     status.textContent = JSON.stringify(result, null, 2);

@@ -7,7 +7,7 @@ import { VfxWindow, vfxWindowAllocate, HUD_LAYER } from '../../src/engine/vfx/vf
 
 export interface HudCapture { width: number; height: number; buffer: number[]; drawn: number[]; layer: number[]; inset: number[] }
 
-export function runHudCropComparison(capture?: HudCapture) {
+export function runHudCropComparison(capture?: HudCapture, variant: 'crop' | 'wasm' = 'crop') {
   const shared = makeUniforms();
   const rgb = new Uint8Array(768); rgb.fill(63);
   setPalette(shared, rgb);
@@ -55,7 +55,8 @@ export function runHudCropComparison(capture?: HudCapture) {
           for (const eye of [-0.032, 0.032]) {
             cam.position.set(eye, 0.08, 0); cam.updateMatrixWorld(true);
             const draw = (crop: boolean, pixels: Uint8Array) => {
-              hud.cropWorldLayers = crop;
+              hud.cropWorldLayers = variant === 'wasm' || crop;
+              if (variant === 'wasm') { hud.wasmPacking = crop; hud.update(win, 960, 960); }
               renderer.setRenderTarget(target); renderer.clear(); renderer.render(scene, cam);
               renderer.readRenderTargetPixels(target, 0, 0, 960, 960, pixels);
             };
@@ -70,7 +71,7 @@ export function runHudCropComparison(capture?: HudCapture) {
         }
       }
     }
-    if (rows.some((r) => r.drawn === 0 || r.different > 2)) throw Error(`HUD crop mismatch: ${JSON.stringify(rows)}`);
+    if (rows.some((r) => r.drawn === 0 || r.different > (variant === 'wasm' ? 0 : 2))) throw Error(`HUD ${variant} mismatch: ${JSON.stringify(rows)}`);
     return rows;
   } finally { hud.dispose(); renderer.dispose(); target.dispose(); }
 }
