@@ -335,8 +335,7 @@ export function menuDraw(ctx: MenuContext): void {
   if (menu.title !== null) {
     tx = ctx.titleX;
     ty = ctx.titleY;
-    const title = scroll && menu.count > scroll.rows ? `${menu.title} ${scroll.first > 0 ? '^' : ''}${scroll.end < menu.count ? 'v' : ''}` : menu.title;
-    vfxStringDraw(pane, tx, ty, font, title, display.textColourTable);
+    vfxStringDraw(pane, tx, ty, font, menu.title, display.textColourTable);
   }
   if (menu.title === null) unestablished('menu_draw: a menu without a title underlines at uninitialised coordinates', 'menu_draw');
   else if ((ctx.flags & 4) !== 0) paneRuleUnderText(pane, tx, ty, font, 1);
