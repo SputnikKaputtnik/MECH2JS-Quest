@@ -142,6 +142,9 @@ const pd: PolyDraw = { fill: NOT_DRAWN, kind: FillKind.ByMode, outline: NOT_DRAW
 export class SceneRenderer {
   /** @portOnly Kept switchable for image/performance comparisons with the reference path. */
   batchWorld = true;
+  /** @portOnly A/B switch for avoiding unchanged object-world matrix updates. */
+  reuseWorldMatrices = true;
+  private readonly nextObjectMatrix = new THREE.Matrix4();
   private readonly worldBatch = new WorldBatch();
   readonly scene = new THREE.Scene();
   /** drawn first, and the depth buffer cleared after it: the sky pass and backdropNode's tree (see sync) */
@@ -278,6 +281,7 @@ export class SceneRenderer {
     const baked = obj.node === null;
     const group = new THREE.Group();
     group.matrixAutoUpdate = false;
+    group.matrixWorldNeedsUpdate = true;
     const behind = (obj.flags & 1) !== 0;
     const meshes: MeshEntry[] = [];
     for (let b = obj.meshList; b; b = b.next) {
@@ -603,9 +607,21 @@ export class SceneRenderer {
       e = this.build(obj, into);
       entries.set(obj, e);
     }
-    if (obj.node) blockToMatrix4(obj.node.worldBlock, e.group.matrix);
-    else e.group.matrix.identity();
-    e.group.matrixWorldNeedsUpdate = true;
+    if (!this.reuseWorldMatrices) {
+      if (obj.node) blockToMatrix4(obj.node.worldBlock, e.group.matrix);
+      else e.group.matrix.identity();
+      e.group.matrixWorldNeedsUpdate = true;
+      return e;
+    }
+    const next = this.nextObjectMatrix;
+    if (obj.node) blockToMatrix4(obj.node.worldBlock, next);
+    else next.identity();
+    // Compare the actual matrix: carryOwned may have interpolated it since
+    // the previous sync even when the simulation block did not change.
+    if (!e.group.matrix.equals(next)) {
+      e.group.matrix.copy(next);
+      e.group.matrixWorldNeedsUpdate = true;
+    }
     return e;
   }
 

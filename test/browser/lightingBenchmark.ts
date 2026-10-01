@@ -13,6 +13,7 @@ import { latchLight, polyLightIntensity } from '../../src/render/shading/polygon
 import { referencePolyLight } from '../reference/polyLight.ts';
 import { renderView } from '../../src/render/pipeline/viewLatch.ts';
 import { runCullBenchmark, type CullInput } from './cullBenchmark.ts';
+import { runMatrixBenchmark } from './matrixBenchmark.ts';
 
 export async function runLightingBenchmark() {
   const data = await loadGameData(new FetchSource());
@@ -56,6 +57,7 @@ export async function runLightingBenchmark() {
         (v.worldY - renderView.viewTranslationY) | 0, poly.normalY,
         (v.worldZ - renderView.viewTranslationZ) | 0, poly.normalZ];
     }));
-    return { kind: 'isolated-lighting-cpu', polygons: polygons.length, repeats, light, rounds, culling, referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0, note: 'Milliseconds per complete polygon set, not per XR frame. Off-head power state can affect absolute timings.' };
+    const matrices = await runMatrixBenchmark(sr);
+    return { kind: 'isolated-lighting-cpu', polygons: polygons.length, repeats, light, rounds, culling, matrices, referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0, note: 'Milliseconds per complete polygon set, not per XR frame. Off-head power state can affect absolute timings.' };
   } finally { sr.destroy(); game.audio.pause(); }
 }
