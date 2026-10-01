@@ -11,6 +11,7 @@
   import { runLightingBenchmark } from './lightingBenchmark.ts';
   import { runResourceLifetimeCheck } from './resourceLifetime.ts';
   import { loadHudKernel } from '../../src/render/wasm/hudKernel.ts';
+  import { runTargetLifetimeCheck } from './targetLifetime.ts';
   window.runQuestTests = async () => {
     const status = document.querySelector('#result');
     status.textContent = 'Running world comparison…';
@@ -28,10 +29,12 @@
     status.textContent = 'Checking mission resource cleanup…';
     const resources = await runResourceLifetimeCheck();
     const scroungeResources = await runResourceLifetimeCheck(true, true);
+    status.textContent = 'Checking target monitor resource lifetime…';
+    const targetResources = await runTargetLifetimeCheck();
     const result = {
       kind: 'offscreen-image-regression', xr: false,
       userAgent: navigator.userAgent, visibility: document.visibilityState,
-      world, wasmWorld, scrounge, hud, wasmHud, lighting, resources, scroungeResources,
+      world, wasmWorld, scrounge, hud, wasmHud, lighting, resources, scroungeResources, targetResources,
       note: 'Executed on device; no XR/compositor FPS or thermal-performance claim.'
     };
     status.textContent = JSON.stringify(result, null, 2);

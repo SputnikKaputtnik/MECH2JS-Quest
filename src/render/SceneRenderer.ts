@@ -588,15 +588,14 @@ export class SceneRenderer {
     renderView.objectViewDepth = depth;
   }
 
-  /** Hides what this pass did not draw; forgets what no pass has drawn for a while. */
+  /** @portOnly Retain only this inset pass's objects. Target views force LOD 0,
+   * which can replace the world's coarser objects every update. Keeping obsolete
+   * identities for 600 passes accumulated thousands of GPU meshes/outlines. */
   private endViewPass(drawn: number, polys: number): void {
     for (const [obj, e] of this.entries) {
       if (e.seen === this.pass) continue;
-      e.group.visible = false;
-      if (this.pass - e.seen > 600) {
-        this.dispose(e);
-        this.entries.delete(obj);
-      }
+      this.dispose(e);
+      this.entries.delete(obj);
     }
     this.stats.objects = drawn;
     this.stats.polygons = polys;
