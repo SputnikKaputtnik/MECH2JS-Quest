@@ -3,6 +3,7 @@ import { Menu, MenuControl, MenuItem } from '../generated/classes.gen.ts';
 import { menuItemToggle, uiContextFindNode } from '../sim/ui/menus.ts';
 import { menuItemAbortMission } from '../sim/ui/menuCallbacks.ts';
 import { ui } from '../sim/ui/uiContext.ts';
+import { setMenuPresentation } from '../sim/ui/menuPresentation.ts';
 import { missionEndCode } from '../sim/mech/damage.ts';
 import { mechRuntime } from '../sim/mech/mechRuntime.ts';
 import { dynamicResolutionEnabled, setDynamicResolution, fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale, QUEST_RENDER_SCALES } from './questGraphics.ts';
@@ -32,10 +33,13 @@ export class QuestComfortMenu {
   private active = false;
   private readonly patched = new WeakSet<Menu>();
 
+  constructor(private readonly click: () => void = () => {}) {}
+
   update(active: boolean): void {
     this.active = active;
-    if (!active) return;
     const ctx = uiContextFindNode(4)?.record;
+    if (ctx) setMenuPresentation(ctx, active, this.click);
+    if (!active) return;
     const root = ctx?.topMenu;
     if (!ctx || !root || this.patched.has(root)) return;
     this.patched.add(root);
@@ -139,6 +143,6 @@ export class QuestComfortMenu {
     const exit = root.items.findIndex(item => item.type === 2 || item.type === 6);
     root.items.splice(exit < 0 ? root.count : exit, 0, entry);
     root.count++;
-    ctx.rows = Math.max(ctx.rows, root.count, options.count);
+    // The presentation scrolls inside the existing menu artwork.
   }
 }

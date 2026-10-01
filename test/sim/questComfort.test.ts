@@ -10,6 +10,7 @@ import { input } from '../../src/sim/controls/input.ts';
 import type { KeyboardDriver } from '../../src/sim/controls/giddi.ts';
 import { missionEndCode } from '../../src/sim/mech/damage.ts';
 import { ui } from '../../src/sim/ui/uiContext.ts';
+import { menuPresentation } from '../../src/sim/ui/menuPresentation.ts';
 import { uiContextFindNode } from '../../src/sim/ui/menus.ts';
 import { cameraGlobals } from '../../src/sim/camera/viewer.ts';
 import { QuestComfortMenu, setEjectionAnimation, ejectionAnimationEnabled, fpsCounterEnabled, setFpsCounter } from '../../src/app/questComfort.ts';
@@ -20,6 +21,7 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
   afterEach(() => vi.unstubAllGlobals());
   let exe: ExeImage, prj: ProjectFile, kb: KeyboardDriver, menu: QuestComfortMenu;
   let vr: boolean;
+  const click = vi.fn();
   const stored = new Map<string, string>();
   beforeAll(async () => {
     exe = ExeImage.fromExe(await gameSource().read('MW2.EXE'));
@@ -35,7 +37,8 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
     setRenderScale(1.25);
     bootMission({ exe, prj, looseFiles: installFiles(), mission: 'AMY_SCN1' });
     kb = input.devices[input.keyboardDevice]!.driver as KeyboardDriver;
-    menu = new QuestComfortMenu();
+    click.mockClear();
+    menu = new QuestComfortMenu(click);
     vr = true;
     frame(20);
   });
@@ -99,6 +102,31 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
     expect(stored.get('mw2.quest.dynamic-resolution')).toBe('false');
     press(0x1c);
     expect(dynamicResolutionEnabled()).toBe(true);
+  });
+
+  it('scrolls to DRS and Back, wraps upward, and clicks only on activation', () => {
+    press(0x01); press(0x07);
+    const ctx = uiContextFindNode(4)!.record!;
+    const range = () => menuPresentation(ctx, top(), null)!;
+    expect(range().first).toBe(0);
+    click.mockClear();
+    for (let i = 0; i < 4; i++) press(0x50);
+    expect(top().items[top().selected]!.label).toBe('Dynamic resolution');
+    expect(range().first).toBeGreaterThan(0);
+    expect(top().selected).toBeLessThan(range().end);
+    expect(click).not.toHaveBeenCalled();
+    press(0x1c);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(dynamicResolutionEnabled()).toBe(false);
+    press(0x4d);
+    expect(click).toHaveBeenCalledTimes(2);
+    press(0x50);
+    expect(top().items[top().selected]!.label).toBe('Back (Esc)');
+    expect(top().selected).toBeLessThan(range().end);
+    press(0x50);
+    expect(range().first).toBe(0);
+    vr = false; frame();
+    expect(menuPresentation(ctx, top(), null)).toBeNull();
   });
 
   it('ends a confirmed VR abort without camera spin and writes the ordinary failed mission result', () => {

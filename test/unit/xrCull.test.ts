@@ -119,3 +119,16 @@ describe('the rig between passes', () => {
     expect(rig.rig.position.x).toBeCloseTo(0.5, 6);
   });
 });
+
+it('places the menu farther away without changing HUD preferences, then restores the HUD', () => {
+  const rig = new XrRig(), hud = new THREE.Object3D();
+  rig.rig.add(hud);
+  rig.placeHud(hud, 1, 0.75);
+  const normal = hud.position.clone();
+  const settings = { ...rig.settings };
+  rig.placeHud(hud, 1, 0.75, 0.8, 2.4);
+  expect(hud.position.z).toBeCloseTo(-2.4);
+  expect(rig.settings).toEqual(settings);
+  rig.placeHud(hud, 1, 0.75);
+  expect(hud.position).toEqual(normal);
+});

@@ -27,6 +27,7 @@ import { radar } from '../cockpit/radar.ts';
 import { soundPlayAt } from '../sound/mixer.ts';
 import { menuLoad, type MenuListData, type MenuPanesData, type MenuSliderData } from './menuLoad.ts';
 import { ui } from './uiContext.ts';
+import { menuPresentation } from './menuPresentation.ts';
 
 /** the ink byte of the text colour table (0xa4dd2 = 0xa4dc4 + 0xe) */
 function ink(c: number): void {
@@ -260,6 +261,7 @@ function itoa10(v: number): string {
  *
  * @mw2 menu_draw 0x00018040
  * @fidelity exact
+ * @divergence an opt-in VR host scrolls the original item rows and adds click feedback; keys and widget lifecycle are unchanged
  */
 export function menuDraw(ctx: MenuContext): void {
   const font = ctx.font;
@@ -326,13 +328,15 @@ export function menuDraw(ctx: MenuContext): void {
     }
   }
   menu.selected = sel;
+  const scroll = menuPresentation(ctx, menu, key);
   ink(ctx.ink);
   let tx = 0;
   let ty = 0;
   if (menu.title !== null) {
     tx = ctx.titleX;
     ty = ctx.titleY;
-    vfxStringDraw(pane, tx, ty, font, menu.title, display.textColourTable);
+    const title = scroll && menu.count > scroll.rows ? `${menu.title} ${scroll.first > 0 ? '^' : ''}${scroll.end < menu.count ? 'v' : ''}` : menu.title;
+    vfxStringDraw(pane, tx, ty, font, title, display.textColourTable);
   }
   if (menu.title === null) unestablished('menu_draw: a menu without a title underlines at uninitialised coordinates', 'menu_draw');
   else if ((ctx.flags & 4) !== 0) paneRuleUnderText(pane, tx, ty, font, 1);
@@ -347,17 +351,24 @@ export function menuDraw(ctx: MenuContext): void {
   for (let i = 0; i < menu.count; i++) {
     ink(i === sel ? ctx.selectedInk : ctx.ink);
     const it = menu.items[i]!;
-    if ((ctx.flags & 8) === 0 && i === exitIdx) add = (add + Math.imul((ctx.rows - i - 1) | 0, ctx.rowHeight)) | 0;
+    if (!scroll && (ctx.flags & 8) === 0 && i === exitIdx) add = (add + Math.imul((ctx.rows - i - 1) | 0, ctx.rowHeight)) | 0;
     text[1] = (text[1]! + add) | 0;
     widget[1] = (widget[1]! + add) | 0;
     cursor[1] = (cursor[1]! + add) | 0;
     add = ctx.rowHeight;
-    if (i === sel && ctx.cursorShp) vfxShapeDraw(pane, ctx.cursorShp, 0, cursor[0]!, cursor[1]!);
+    const visible = !scroll || (i >= scroll.first && i < scroll.end);
+    if (scroll) {
+      const row = i - scroll.first;
+      text[1] = ctx.textY + row * ctx.rowHeight;
+      widget[1] = visible ? ctx.widgetY + row * ctx.rowHeight : 32767;
+      cursor[1] = ctx.cursorY + half + row * ctx.rowHeight;
+    }
+    if (visible && i === sel && ctx.cursorShp) vfxShapeDraw(pane, ctx.cursorShp, 0, cursor[0]!, cursor[1]!);
     if (it.type !== 3) {
       number = i === exitIdx ? 0 : number + 1;
-      vfxStringDraw(pane, text[0]!, text[1]!, font, itoa10(number), display.textColourTable);
+      if (visible) vfxStringDraw(pane, text[0]!, text[1]!, font, itoa10(number), display.textColourTable);
     }
-    if (it.label !== null) vfxStringDraw(pane, (text[0]! + numWidth) | 0, text[1]!, font, it.label, display.textColourTable);
+    if (visible && it.label !== null) vfxStringDraw(pane, (text[0]! + numWidth) | 0, text[1]!, font, it.label, display.textColourTable);
     if (it.draw) it.draw(ctx, it.control, i, it, widget[0]!, widget[1]!, menu);
   }
   ink(0xe);

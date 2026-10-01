@@ -69,6 +69,7 @@ import { HUD_LAYER } from '../engine/vfx/vfx.ts';
 import { cameraGlobals, viewer } from '../sim/camera/viewer.ts';
 import { projectionGlobals, viewerRefreshLodScale } from '../sim/camera/projection.ts';
 import { radar } from '../sim/cockpit/radar.ts';
+import { ui } from '../sim/ui/uiContext.ts';
 import { hud } from '../sim/cockpit/hud.ts';
 import { defaultCanvas } from '../sim/display/video.ts';
 import { renderPort } from '../sim/display/renderPort.ts';
@@ -178,7 +179,7 @@ export class GameScreen {
   private readonly aimMemo = new AimDepthMemo();
   private aimRevision = 0;
   private readonly aimPoint = new THREE.Vector2();
-  private readonly questComfort = new QuestComfortMenu();
+  private readonly questComfort = new QuestComfortMenu(() => this.game.audio.menuClick());
 
   private cockpitKey: string | null = null;
   private cockpitRampsOf: string | null = null;
@@ -526,6 +527,7 @@ export class GameScreen {
     sr.setViewport(drawSize.x, drawSize.y);
     // the cockpit: the chassis's hand-built design when there is one, in place of the shell's own mesh
     const mapUp = radar.mode >= 3;
+    const menuUp = xr && ui.menuOpenCount > 0;
     const inCockpit = en.cockpit && (!scene || outside.cockpit !== 'hidden') && cameraGlobals.cockpitViewActive !== 0 && !mapUp;
     if (this.cockpitKey === null && viewScene.cockpitHeadNode) this.cockpitKey = cockpitChassis(game.data.prj);
     const headObj = viewScene.cockpitHeadNode?.userData ?? null;
@@ -579,7 +581,7 @@ export class GameScreen {
       if (xr) {
         // the reticle and the target marker, across the game's field of view far out from the pass's
         // eye, so they lie on what they mark; no depth test against the world, and the cockpit covers them
-        if (hudReady) {
+        if (hudReady && !menuUp) {
           lifted = this.liftHudLayers(tanH, dt);
           if (lifted) {
             const marker = hudOverlay.markerMesh.visible;
@@ -640,12 +642,13 @@ export class GameScreen {
         gameCam.updateProjectionMatrix();
       }
     } else cockpit.hide();
-    hudOverlay.setExcluded(cockpit.shown);
+    // Cockpit screen cutouts must never punch holes through a menu.
+    hudOverlay.setExcluded(menuUp ? [] : cockpit.shown);
     // the game's 2D (HUD, radar, cockpit text) over it all, through the game's camera - in a headset on a plane ahead
     if (hudReady) {
       if (xr) {
         // the satellite map takes the whole view, as in the original: the HUD plane at the game's full field of view
-        rig.placeHud(hudOverlay.worldMesh, tanH, hudOverlay.aspect, mapUp ? 1 : undefined);
+        rig.placeHud(hudOverlay.worldMesh, tanH, hudOverlay.aspect, menuUp ? 0.8 : mapUp ? 1 : undefined, menuUp ? Math.max(2.4, s.xr.hudDistance) : undefined);
         const layers = 0b111 & ~lifted;
         xrPass((c) => {
           hudOverlay.reticleMesh.visible = false;

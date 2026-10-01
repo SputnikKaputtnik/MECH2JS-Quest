@@ -146,8 +146,8 @@ export class XrRig {
    * Sizes the HUD plane: `tanH` the tangent of half the game's horizontal
    * field of view, `aspect` the window's height / width.
    */
-  placeHud(hud: THREE.Object3D, tanH: number, aspect: number, hudScale = this.settings.hudScale): void {
-    place(this.rig, hud, this.settings.hudDistance, tanH * hudScale, aspect);
+  placeHud(hud: THREE.Object3D, tanH: number, aspect: number, hudScale = this.settings.hudScale, distance = this.settings.hudDistance): void {
+    place(this.rig, hud, distance, tanH * hudScale, aspect);
   }
 
   /**

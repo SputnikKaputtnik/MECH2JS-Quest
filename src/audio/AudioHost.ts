@@ -83,6 +83,24 @@ export class AudioHost {
     else this.enable();
   }
 
+  /** @portOnly Short centred menu click, through the existing enabled audio output. */
+  menuClick(): void {
+    const audio = this.context();
+    if (!audio || audio.ctx.state !== 'running') return;
+    const { ctx, out } = audio;
+    const tone = ctx.createOscillator(), gain = ctx.createGain();
+    const now = ctx.currentTime;
+    tone.type = 'triangle';
+    tone.frequency.setValueAtTime(900, now);
+    tone.frequency.exponentialRampToValueAtTime(450, now + 0.035);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.10, now + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+    tone.connect(gain); gain.connect(out);
+    tone.onended = () => { tone.disconnect(); gain.disconnect(); };
+    tone.start(now); tone.stop(now + 0.045);
+  }
+
   /** After each played frame: queue the PCM the mixer produced for it. */
   pump(): void {
     const ctx = this.ctx;
