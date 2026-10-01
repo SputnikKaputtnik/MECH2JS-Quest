@@ -66,21 +66,32 @@ export function polyLightIntensity(poly: MeshPolygon, vertices: MeshVertex[], L:
   let az = (dz < 0 ? -dz : dz) >>> 0;
   const or = (ax | ay | az) >>> 0;
   if (or === 0) return 0x7f;
-  let dot = (BigInt(dx) * BigInt(poly.normalX) + BigInt(dy) * BigInt(poly.normalY) + BigInt(dz) * BigInt(poly.normalZ)) >> 16n;
   const shift = 31 - Math.clz32(or) - 7;
   if (shift > 0) {
     ax >>>= shift;
     ay >>>= shift;
     az >>>= shift;
-    dot >>= BigInt(shift);
   } else if (shift < 0) {
     ax = (ax << -shift) >>> 0;
     ay = (ay << -shift) >>> 0;
     az = (az << -shift) >>> 0;
-    dot = BigInt.asIntN(64, dot << BigInt(-shift));
   }
   const sum = (ax & 0xff) * (ax & 0xff) + (ay & 0xff) * (ay & 0xff) + (az & 0xff) * (az & 0xff);
   const len = (sqrtTable[(sum >>> 7) >>> 1]! << 16) >> 16;
+  // @portOnly Exact Number fast path: bounding the absolute products also
+  // bounds every partial sum, including cancellation. Floor preserves signed
+  // right-shift rounding; only the final division truncates towards zero.
+  const x = dx * poly.normalX, y = dy * poly.normalY, z = dz * poly.normalZ;
+  if (Math.abs(x) + Math.abs(y) + Math.abs(z) <= Number.MAX_SAFE_INTEGER && len !== 0) {
+    let dot = Math.floor((x + y + z) / 65536);
+    if (shift > 0) dot = Math.floor(dot / 2 ** shift);
+    else if (shift < 0) dot *= 2 ** -shift;
+    return (Math.trunc(dot / len) << 16) >> 16;
+  }
+  // Extreme inputs retain the original unbounded sum and 64-bit left shift.
+  let dot = (BigInt(dx) * BigInt(poly.normalX) + BigInt(dy) * BigInt(poly.normalY) + BigInt(dz) * BigInt(poly.normalZ)) >> 16n;
+  if (shift > 0) dot >>= BigInt(shift);
+  else if (shift < 0) dot = BigInt.asIntN(64, dot << BigInt(-shift));
   const q = dot / BigInt(len);
   return (Number(BigInt.asIntN(16, q)) << 16) >> 16;
 }

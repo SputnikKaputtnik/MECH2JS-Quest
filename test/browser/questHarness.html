@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>MW2 isolated Quest tests</title>
+<h1>Quest renderer tests</h1>
+<p>Development fixture. Uses its own mission, never player saves. These are offscreen image checks, not headset FPS measurements.</p>
+<pre id="result">Ready</pre>
+<script type="module">
+  import { runWorldBatchComparison } from './worldBatch.ts';
+  import { runHudCropComparison } from './hudCrop.ts';
+  import { runLightingBenchmark } from './lightingBenchmark.ts';
+  window.runQuestTests = async () => {
+    const status = document.querySelector('#result');
+    status.textContent = 'Running world comparison…';
+    const world = await runWorldBatchComparison();
+    status.textContent = 'Running HUD comparison…';
+    const hud = runHudCropComparison();
+    status.textContent = 'Running lighting CPU comparison…';
+    const lighting = await runLightingBenchmark();
+    const result = {
+      kind: 'offscreen-image-regression', xr: false,
+      userAgent: navigator.userAgent, visibility: document.visibilityState,
+      world, hud, lighting,
+      note: 'Executed on device; no XR/compositor FPS or thermal-performance claim.'
+    };
+    status.textContent = JSON.stringify(result, null, 2);
+    return result;
+  };
+</script>
+</html>

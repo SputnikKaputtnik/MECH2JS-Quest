@@ -68,13 +68,28 @@ A later optimization candidate is a coarse-grained C/C++ WebAssembly module for 
 
 `window.mw2QuestPerf.reset()` starts a new sample. `snapshot()` reports callback frequency, CPU and simulation time, draw calls, triangles, actual XR layer dimensions, per-eye viewport sizes, granted refresh rate and fixed foveation. Stable 90 FPS at increased resolution still requires on-device verification across missions.
 
+Polygon lighting now uses Number arithmetic only when the sum of absolute dot-product terms fits exactly within the safe integer range. Signed shifts still round down, the final division still truncates, and extreme inputs retain the BigInt reference path. This changes arithmetic cost, not the lighting model. Two seeded property tests compare 50,000 cases against the frozen BigInt implementation, covering ordinary 16.16 inputs, negative rounding, positional lights and signed extremes.
+
+An unattended Quest 3 comparison on 1,067 frozen AMY_SCN1 world polygons measured 0.127 ms for the reference versus 0.092 ms for the optimized lighting function per complete polygon set (20 alternating measured rounds, 16 repetitions each, after warmup). Every intensity matched. This is about 28% less time in this isolated function, only 0.035 ms per tested set; it is not a measured whole-frame or FPS improvement. Off-head power state, development code and CPU clocks affect absolute timings.
+
+## Unattended Quest checks
+
+With USB debugging authorized and Quest Browser available, image regressions can run without wearing the headset:
+
+1. Start a separate development server: `node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5175 --strictPort`.
+2. Run `node tools/quest-test.mjs ../quest-test-report.json`. Set `ADB` if platform-tools is outside PATH/the usual Windows SDK location, and `ANDROID_SERIAL` if multiple devices are connected.
+
+The runner opens and closes its own browser tab on port 5175, loads a test mission without player saves, compares 15 world images and 36 synthetic HUD images, and runs the alternating lighting benchmark. It keeps the installed game's origin/tab separate, uses bounded waits and removes only its own temporary ADB mappings. JSON reports belong outside the repository. No XR permission or device sleep setting is changed.
+
+The first on-device image run passed with at most 36 differing world pixels per 640×480 view (within the existing 0.1% edge/dither tolerance) and 2 HUD pixels per 960×960 view. These Quest GPU results differ from the desktop pixel counts below. Offscreen rendering does not verify immersive entry, physical controllers, head tracking, compositor timing or sustained 90-Hz behavior. The current off-head browser rejected automatic immersive entry; final VR performance/comfort checks still need an active headset session.
+
 ## Validation
 
 Engine, app and tool/test TypeScript checks, ESLint and the production/offline build are run locally. Targeted tests cover the real pilot registry, virtual keyboard, controller neutral/release behavior, shell return without stale-click relaunch, comfort options, HUD upload reuse, cockpit-relative FPS placement, graphics settings and offline worker activation.
 
 Batch tests cover visibility, clipped geometry/colour updates, moving parts, shadow-layer preservation, draw failure recovery, unchanged-buffer reuse and repeated effect replacement. The WebGL comparison at `/test/browser/worldBatch.html` (dev server only, separate browser context) renders reference and batched images of the same frozen mission state. In 15 AMY_SCN1 views at 640×480 it found 0–4 differing pixels per image and no shader errors; moving matrix multiplication to GPU floats can shift edge/dither pixels. One forward view fell from 133 world draw calls/2,479 submitted triangles to 2 calls/734 triangles. This does not replace testing other missions, close clipping, effects and stereo in the headset.
 
-HUD crop checks cover window resizing, pixel-edge guards, target disappearance and cached uploads. `/test/browser/hudCrop.html` compares 36 synthetic stereo/oblique views at two source sizes (0–2 differing output pixels per 960×960 image, no shader errors). Six additional views of an AMY_SCN1 reticle drawn by the original simulation matched exactly. Both browser comparisons were rerun after changing HUD packing. The browser helper also accepts a captured `HudCapture`; an empty capture is rejected rather than counted as a successful visible-image test. The current complete unit suite passes 279 tests. The packing property test checks 100 deterministic combinations of window dimensions, palette bytes, drawn masks, layer tags and inset IDs against the previous independent byte layout, also checking the reticle centre.
+HUD crop checks cover window resizing, pixel-edge guards, target disappearance and cached uploads. `/test/browser/hudCrop.html` compares 36 synthetic stereo/oblique views at two source sizes (0–2 differing output pixels per 960×960 image, no shader errors). Six additional views of an AMY_SCN1 reticle drawn by the original simulation matched exactly. Both browser comparisons were rerun after changing HUD packing. The browser helper also accepts a captured `HudCapture`; an empty capture is rejected rather than counted as a successful visible-image test. The current complete unit suite passes 281 tests. The packing property test checks 100 deterministic combinations of window dimensions, palette bytes, drawn masks, layer tags and inset IDs against the previous independent byte layout, also checking the reticle centre.
 
 Game-dependent tests require private compatible files. A previous full run passed 498 tests with one CD-image-specific golden failure: the image had a 300-sector gap where the reference expected 150. Neither image nor test was modified to conceal it. Tests requiring absent game files skip rather than establish compatibility.
 
