@@ -1,4 +1,4 @@
-/** @portOnly Low-poly pointing glove in XR grip space: index points along -Z. */
+/** @portOnly Low-poly pointing glove aligned to the hand holding an XR controller. */
 import * as THREE from 'three';
 
 /** Baked facet lighting keeps the original unlit/palette-like visual style. */
@@ -45,6 +45,12 @@ export class FacetedGlove {
     }
     finger([-0.037,-0.005,0],[-0.054,-0.021,-0.027],0.014,0x747d84);
     finger([-0.054,-0.021,-0.027],[-0.036,-0.034,-0.049],0.012,0x899292);
+    // Roll each hand outward, then pitch forward about the controller's X axis.
+    // Keep this correction below root: tracking replaces root.matrix every frame.
+    const alignment = new THREE.Matrix4().makeRotationX(-Math.PI/4)
+      .multiply(new THREE.Matrix4().makeRotationZ(-mirror*Math.PI/2));
+    for (const part of this.root.children) part.applyMatrix4(alignment);
+    this.tip.applyMatrix4(alignment);
     this.root.visible=false;
   }
   dispose(): void {
