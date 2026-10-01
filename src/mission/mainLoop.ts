@@ -61,6 +61,8 @@ export const mainLoop = registerGlobals(
   {
     /** 0x97074 */
     renderHook: null as RenderHook | null,
+    /** @portOnly Host comfort policy, after damage/AI and before camera motion; true retains the previous view. */
+    cameraOverride: null as (() => boolean) | null,
     /** main's local_2c[2]: quitCountdown has had its one extra step */
     quitCounted: 0,
     /** @portOnly frames run since the loop started */
@@ -68,6 +70,7 @@ export const mainLoop = registerGlobals(
   },
   () => {
     mainLoop.renderHook = null;
+    mainLoop.cameraOverride = null;
     mainLoop.quitCounted = 0;
     mainLoop.frameCount = 0;
   },
@@ -108,7 +111,7 @@ export function mainLoopFrame(): void {
   keyCommandUpdate();
   taskListRun(taskGlobals.missionTaskList);
   mechDispatchHook1();
-  cameraUpdate();
+  if (!mainLoop.cameraOverride?.()) cameraUpdate();
   projectilesUpdateAll();
   simSlotsUpdate();
   mechDispatchHook3();
@@ -118,6 +121,9 @@ export function mainLoopFrame(): void {
   bitmap3dAnimate();
   mainLoop.renderHook?.();
   mechDispatchHook4();
+  // Damage can also happen after camera_update; settle the host end policy
+  // before drawing the HUD and recording mission results.
+  mainLoop.cameraOverride?.();
   uiContextDispatch();
   vfxVideoSub0106d0();
   soundFrameUpdate();

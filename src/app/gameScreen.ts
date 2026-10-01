@@ -850,6 +850,7 @@ export class GameScreen {
     this.groundField.dispose();
     this.shadows.dispose();
     this.cockpitHands.dispose();
+    this.questComfort.dispose();
     this.cockpit.dispose();
     this.spectatorTarget?.dispose();
     this.skyGround.dispose();

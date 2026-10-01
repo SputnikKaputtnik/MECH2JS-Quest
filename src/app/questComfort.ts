@@ -6,6 +6,9 @@ import { ui } from '../sim/ui/uiContext.ts';
 import { setMenuPresentation } from '../sim/ui/menuPresentation.ts';
 import { missionEndCode } from '../sim/mech/damage.ts';
 import { mechRuntime } from '../sim/mech/mechRuntime.ts';
+import { mechs } from '../sim/mech/mechGlobals.ts';
+import { mainLoop } from '../mission/mainLoop.ts';
+import { cameraGlobals } from '../sim/camera/viewer.ts';
 import { dynamicResolutionEnabled, setDynamicResolution, fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale, QUEST_RENDER_SCALES } from './questGraphics.ts';
 
 const KEY = 'mw2.quest.ejection-animation';
@@ -32,11 +35,26 @@ export function ejectionAnimationEnabled(): boolean { return ejectionAnimation; 
 export class QuestComfortMenu {
   private active = false;
   private readonly patched = new WeakSet<Menu>();
+  private lastCameraMode = 0;
+  private readonly skipEndCamera = (): boolean => {
+    if (!this.active || ejectionAnimation) return false;
+    const status = mechs.mechTable[mechs.playerMechIndex]?.loadout?.status;
+    if (status !== 4 && status !== 5) return false;
+    // Destruction/ejection has already recorded damage and kill/loss credit.
+    // Keep the last view and let the normal results/persistence finish this pass.
+    cameraGlobals.cameraMode = this.lastCameraMode;
+    mechRuntime.playerOut = 1;
+    ui.quitRequested = 1;
+    ui.quitCountdown = 3;
+    return true;
+  };
 
   constructor(private readonly click: () => void = () => {}) {}
 
   update(active: boolean): void {
     this.active = active;
+    this.lastCameraMode = cameraGlobals.cameraMode;
+    mainLoop.cameraOverride = active ? this.skipEndCamera : null;
     const ctx = uiContextFindNode(4)?.record;
     if (ctx) setMenuPresentation(ctx, active, this.click);
     if (!active) return;
@@ -72,7 +90,7 @@ export class QuestComfortMenu {
     options.title = 'VR OPTIONS';
     const toggle = new MenuItem();
     toggle.type = 4;
-    toggle.label = 'Ejection animation';
+    toggle.label = 'Eject/death animation';
     const control = new MenuControl();
     control.flags = 1;
     control.get = () => Number(ejectionAnimation);
@@ -144,5 +162,10 @@ export class QuestComfortMenu {
     root.items.splice(exit < 0 ? root.count : exit, 0, entry);
     root.count++;
     // The presentation scrolls inside the existing menu artwork.
+  }
+
+  dispose(): void {
+    this.active = false;
+    if (mainLoop.cameraOverride === this.skipEndCamera) mainLoop.cameraOverride = null;
   }
 }

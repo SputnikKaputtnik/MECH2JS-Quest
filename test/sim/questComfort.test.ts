@@ -8,7 +8,10 @@ import { mainLoopFrame, mainLoopRunning } from '../../src/mission/mainLoop.ts';
 import { missionEnd } from '../../src/mission/end.ts';
 import { input } from '../../src/sim/controls/input.ts';
 import type { KeyboardDriver } from '../../src/sim/controls/giddi.ts';
-import { missionEndCode } from '../../src/sim/mech/damage.ts';
+import { mechs } from '../../src/sim/mech/mechGlobals.ts';
+import { lighting } from '../../src/sim/world/environment.ts';
+import { mainLoop } from '../../src/mission/mainLoop.ts';
+import { missionEndCode, mechOnDestroyed, mechEject } from '../../src/sim/mech/damage.ts';
 import { ui } from '../../src/sim/ui/uiContext.ts';
 import { menuPresentation } from '../../src/sim/ui/menuPresentation.ts';
 import { uiContextFindNode } from '../../src/sim/ui/menus.ts';
@@ -59,6 +62,7 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
     expect(top().items.map(i => i.label)).toContain('VR Options');
     press(0x07); // sixth entry: VR Options
     expect(top().title).toBe('VR OPTIONS');
+    expect(top().items[0]!.label).toBe('Eject/death animation');
     expect(top().items[1]!.label).toMatch(/WARNING.*nausea/);
     press(0x1c); // A / Enter toggles
     expect(ejectionAnimationEnabled()).toBe(true);
@@ -139,6 +143,39 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
     expect(result.exitStatus).toBe(0);
     expect(dosFileLoad('MW2MSN.CFG')).not.toBeNull();
     expect(dosFileLoad('MW2CAR.CFG')).not.toBeNull();
+  });
+
+  it.each(['death', 'auto-eject', 'eject-disabled'] as const)('skips %s camera motion and preserves the ordinary loss result', kind => {
+    const player = mechs.mechTable[mechs.playerMechIndex]!.loadout!;
+    const previousMode = cameraGlobals.cameraMode;
+    const pose = () => { const v = cameraGlobals.mainViewer; return [v.posX, v.posY, v.posZ, v.yaw, v.pitch, v.roll]; };
+    const previousPose = pose();
+    if (kind === 'death') mechOnDestroyed(player);
+    else if (kind === 'auto-eject') mechEject(player, 1);
+    else { lighting.ejectDisabled = 1; player.status = 5; mechOnDestroyed(player); }
+    const outcome = missionEndCode();
+    frame();
+    expect(mainLoopRunning()).toBe(false);
+    expect(cameraGlobals.cameraMode).toBe(previousMode);
+    expect(pose()).toEqual(previousPose);
+    expect(missionEndCode()).toBe(outcome);
+    expect(missionEnd().result).toBe(3);
+    expect(dosFileLoad('MW2MSN.CFG')).not.toBeNull();
+  });
+
+  it.each([true, false])('retains normal death animation when enabled or outside VR (%s)', enabled => {
+    setEjectionAnimation(enabled);
+    vr = enabled;
+    mechOnDestroyed(mechs.mechTable[mechs.playerMechIndex]!.loadout!);
+    frame();
+    expect(mainLoopRunning()).toBe(true);
+    expect(cameraGlobals.cameraMode).toBe(1);
+  });
+
+  it('releases the camera policy on teardown', () => {
+    expect(mainLoop.cameraOverride).not.toBeNull();
+    menu.dispose();
+    expect(mainLoop.cameraOverride).toBeNull();
   });
 
   it('preserves the original ejection animation when enabled', () => {
