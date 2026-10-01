@@ -3,7 +3,7 @@
 // shows up as a mech drifting a centimetre per minute.
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { Acc64, det2r29, dot3Negative, dot3r29, imul64, mulHi, mulr29, mulShr, regHi, regLo, udivShl, umul64 } from '../../src/core/int/i64.ts';
+import { Acc64, det2r29, dot3Negative, dot3r27, dot3r29, imul64, mulHi, mulr29, mulShr, regHi, regLo, udivShl, umul64 } from '../../src/core/int/i64.ts';
 
 const i32 = fc.integer({ min: -0x80000000, max: 0x7fffffff });
 const u32 = fc.integer({ min: 0, max: 0xffffffff });
@@ -19,6 +19,23 @@ const oracleShr29r = (v: bigint): number => {
 };
 
 describe('i64', () => {
+  it('rounded vertex depth preserves ties, cancellation, safe-range boundaries and overflow', () => {
+    const check = (a: number, b: number, c: number, d: number, e: number, f: number) => {
+      const w = BigInt.asIntN(64, BigInt(a) * BigInt(b) + BigInt(c) * BigInt(d) + BigInt(e) * BigInt(f));
+      expect(dot3r27(a, b, c, d, e, f)).toBe(toI32((w >> 27n) + ((w >> 26n) & 1n)));
+    };
+    const scene = fc.integer({ min: -1000000, max: 1000000 });
+    fc.assert(fc.property(int, int, int, int, int, int, check), { numRuns: 25000, seed: 27001 });
+    fc.assert(fc.property(int, scene, int, scene, int, scene, check), { numRuns: 25000, seed: 27002 });
+    for (const sign of [-1, 1]) for (const offset of [-2, -1, 0, 1, 2]) {
+      check(sign * 0x4000000 + offset, 1, 0, 0, 0, 0);
+      check(sign * 0x4000000 + offset, 1, sign * 0x4000000, 0x7fffffe, 0, 0);
+      check(sign * 0x4000000, 0x8000000, sign * 0x4000000, 0x8000000, offset, 1);
+      check(0x7fffffff, 0x7fffffff, -0x7fffffff, 0x7fffffff, sign * 0x4000000 + offset, 1);
+    }
+    check(-0x80000000, -0x80000000, -0x80000000, -0x80000000, 0, 0);
+  });
+
   it('dot-product sign preserves cancellation, zero and int64 overflow', () => {
     const check = (a: number, b: number, c: number, d: number, e: number, f: number) => {
       const sum = BigInt(a) * BigInt(b) + BigInt(c) * BigInt(d) + BigInt(e) * BigInt(f);

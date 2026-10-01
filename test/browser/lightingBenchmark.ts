@@ -15,6 +15,7 @@ import { renderView } from '../../src/render/pipeline/viewLatch.ts';
 import { runCullBenchmark, type CullInput } from './cullBenchmark.ts';
 import { runMatrixBenchmark } from './matrixBenchmark.ts';
 import { runBatchCpuBenchmark } from './batchCpuBenchmark.ts';
+import { runDepthBenchmark } from './depthBenchmark.ts';
 
 export async function runLightingBenchmark() {
   const data = await loadGameData(new FetchSource());
@@ -58,8 +59,13 @@ export async function runLightingBenchmark() {
         (v.worldY - renderView.viewTranslationY) | 0, poly.normalY,
         (v.worldZ - renderView.viewTranslationZ) | 0, poly.normalZ];
     }));
+    const depth = await runDepthBenchmark(meshes.flatMap(mesh => mesh.vertices.slice(0, mesh.vertexCount).map((v): CullInput => [
+      renderView.viewDepthRowY, (v.worldY - renderView.viewTranslationY) | 0,
+      renderView.viewDepthRowX, (v.worldX - renderView.viewTranslationX) | 0,
+      renderView.viewDepthRowZ, (v.worldZ - renderView.viewTranslationZ) | 0,
+    ])));
     const matrices = await runMatrixBenchmark(sr);
     const batching = await runBatchCpuBenchmark(sr);
-    return { kind: 'isolated-lighting-cpu', polygons: polygons.length, repeats, light, rounds, culling, matrices, batching, referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0, note: 'Milliseconds per complete polygon set, not per XR frame. Off-head power state can affect absolute timings.' };
+    return { kind: 'isolated-lighting-cpu', polygons: polygons.length, repeats, light, rounds, culling, depth, matrices, batching, referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0, note: 'Milliseconds per complete polygon set, not per XR frame. Off-head power state can affect absolute timings.' };
   } finally { sr.destroy(); game.audio.pause(); }
 }

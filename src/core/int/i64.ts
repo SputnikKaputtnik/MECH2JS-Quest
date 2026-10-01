@@ -120,6 +120,20 @@ export function mulr29(a: number, b: number): number {
 
 const dotAcc = new Acc64();
 
+/** @portOnly Exact rounded vertex depth, with a Number path for bounded scene coordinates. */
+export function dot3r27(a0: number, b0: number, a1: number, b1: number, a2: number, b2: number): number {
+  a0 |= 0; b0 |= 0; a1 |= 0; b1 |= 0; a2 |= 0; b2 |= 0;
+  const p0 = a0 * b0, p1 = a1 * b1, p2 = a2 * b2;
+  // This bound makes each product and every partial sum exact. Division by
+  // 2^27 is exact too; Math.round rounds half toward +infinity, just like
+  // arithmetic shift followed by adding bit 26. Do not add 2^26 to the
+  // integer sum first: that could exceed Number's exact integer range.
+  if (Math.abs(p0) + Math.abs(p1) + Math.abs(p2) <= Number.MAX_SAFE_INTEGER) {
+    return Math.round((p0 + p1 + p2) / 134217728) | 0;
+  }
+  return dotAcc.clear().mulAdd(a0, b0).mulAdd(a1, b1).mulAdd(a2, b2).shr27r();
+}
+
 /** @portOnly Exact sign of the wrapped int64 dot product used by back-face culling. */
 export function dot3Negative(a0: number, b0: number, a1: number, b1: number, a2: number, b2: number): boolean {
   a0 |= 0; b0 |= 0; a1 |= 0; b1 |= 0; a2 |= 0; b2 |= 0;

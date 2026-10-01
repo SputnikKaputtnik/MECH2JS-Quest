@@ -23,7 +23,7 @@
  */
 import { cameraGlobals } from '../../sim/camera/viewer.ts';
 import type { MeshBlock, MeshPolygon, MeshVertex, WorldObject } from '../../generated/classes.gen.ts';
-import { Acc64, dot3Negative, imul64, regHi, regLo } from '../../core/int/i64.ts';
+import { Acc64, dot3Negative, dot3r27, imul64, regHi, regLo } from '../../core/int/i64.ts';
 import { renderView } from './viewLatch.ts';
 import { radar } from '../../sim/cockpit/radar.ts';
 import { mechs } from '../../sim/mech/mechGlobals.ts';
@@ -192,12 +192,9 @@ export function meshResetClipState(m: MeshBlock): void {
 function vertexViewDepth(v: MeshVertex): void {
   if ((v.flags & 4) !== 0) return;
   const r = renderView;
-  const d = acc
-    .clear()
-    .mulAdd(r.viewDepthRowY, (v.worldY - r.viewTranslationY) | 0)
-    .mulAdd(r.viewDepthRowX, (v.worldX - r.viewTranslationX) | 0)
-    .mulAdd(r.viewDepthRowZ, (v.worldZ - r.viewTranslationZ) | 0)
-    .shr27r();
+  const d = dot3r27(r.viewDepthRowY, (v.worldY - r.viewTranslationY) | 0,
+    r.viewDepthRowX, (v.worldX - r.viewTranslationX) | 0,
+    r.viewDepthRowZ, (v.worldZ - r.viewTranslationZ) | 0);
   v.viewDepth = d;
   v.flags |= 4;
   let out = d < r.viewNearClipScaled ? 1 : 0;
