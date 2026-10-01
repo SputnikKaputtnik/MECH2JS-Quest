@@ -22,3 +22,10 @@ private-data/
 *.prj
 *.CFG
 *.cfg
+
+# Standalone Android outputs and private signing/transfer material.
+*.apk
+*.jks
+*.keystore
+*.tar
+__pycache__/

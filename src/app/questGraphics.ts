@@ -7,6 +7,13 @@ let foveated = true;
 let dynamic = true;
 const controllers = new WeakMap<WebGLRenderer, { control: DynamicResolution; supported: boolean | null }>();
 let scale = 1.25;
+// Wolvic Chromium 1.4 exposes requestViewportScale, but its compositor still
+// samples the full eye rectangle. On Quest this produced a distorted stereo
+// image; restoring scale 1 live fixed it in the headset. Do not infer support
+// from API presence on this pinned runtime. Quest Browser is unaffected.
+const viewportScalingBroken = typeof navigator !== 'undefined'
+  && /Chrome\//.test(navigator.userAgent) && /\bWolvic\/1\.4(?:\s|$)/.test(navigator.userAgent);
+export function dynamicResolutionRuntimeAvailable(): boolean { return !viewportScalingBroken; }
 try {
   dynamic = localStorage.getItem('mw2.quest.dynamic-resolution') !== 'false';
   foveated = localStorage.getItem('mw2.quest.ffr') !== 'false';
@@ -38,7 +45,7 @@ export function updateQuestResolution(renderer: WebGLRenderer, now: number, miss
   if (!views?.length) { state.control.resetTiming(); return; }
   // Both XRWebGLLayer and Quest projection subimages consume the next viewport request.
   const layer = renderer.xr.getBaseLayer();
-  state.supported = !!layer && views.every(view => typeof view.requestViewportScale === 'function');
+  state.supported = !viewportScalingBroken && !!layer && views.every(view => typeof view.requestViewportScale === 'function');
   const value = state.control.sample(now, session.frameRate || QUEST_TARGET_HZ, dynamic && mission && state.supported);
   if (state.supported) for (const view of views) view.requestViewportScale(value);
 }

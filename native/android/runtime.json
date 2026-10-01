@@ -1,0 +1,10 @@
+{
+  "package": "io.github.sputnikkaputtnik.mech2quest",
+  "runtime": "Wolvic Chromium 1.4 / OpenXR (arm64, Quest)",
+  "url": "https://github.com/Igalia/wolvic/releases/download/v1.4-chromium/Wolvic-oculusvr-arm64-chromium-generic-release.apk",
+  "sha256": "fdb6f939be990ddcddda3ec72bc055ac2a2ff1068e1f4231e3044d84691a7ca2",
+  "source": "https://github.com/Igalia/wolvic/tree/v1.4-chromium",
+  "engineSource": "https://github.com/Igalia/wolvic-chromium",
+  "apktoolVersion": "3.0.3",
+  "apktoolSha256": "dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423"
+}

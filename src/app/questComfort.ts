@@ -9,7 +9,7 @@ import { mechRuntime } from '../sim/mech/mechRuntime.ts';
 import { mechs } from '../sim/mech/mechGlobals.ts';
 import { mainLoop } from '../mission/mainLoop.ts';
 import { cameraGlobals } from '../sim/camera/viewer.ts';
-import { dynamicResolutionEnabled, setDynamicResolution, fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale, QUEST_RENDER_SCALES } from './questGraphics.ts';
+import { dynamicResolutionEnabled, dynamicResolutionRuntimeAvailable, setDynamicResolution, fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale, QUEST_RENDER_SCALES } from './questGraphics.ts';
 
 const KEY = 'mw2.quest.ejection-animation';
 const FPS_KEY = 'mw2.quest.fps-counter';
@@ -149,6 +149,11 @@ export class QuestComfortMenu {
     dynamicControl.data = { kind: 'list', suffix: null, count: 2, strings: ['OFF', 'ON'] };
     dynamic.control = dynamicControl;
     dynamic.draw = toggle.draw;
+    if (!dynamicResolutionRuntimeAvailable()) {
+      dynamic.type = 3;
+      dynamic.label = 'Dynamic resolution: unavailable';
+      dynamic.control = null;
+    }
     const restart = new MenuItem();
     restart.type = 3;
     restart.label = 'Resolution: restart VR to apply';

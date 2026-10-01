@@ -2,7 +2,7 @@
 
 Experimental Quest 3 fork of [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS), based on upstream `vr-mode` at `d689e322de1c862351b3c97d5ecbcf388c116ed4`.
 
-The first goal is a faithful VR interpretation of the original visuals. Optional stylistically compatible enhancements can follow later. Rendering and simulation run on the headset. The current delivery is an offline-capable WebXR app in Quest Browser, not an Android APK.
+The first goal is a faithful VR interpretation of the original visuals. Optional stylistically compatible enhancements can follow later. Rendering and simulation run on the headset. The offline Quest Browser build remains available; a separate [Android prototype with its own embedded runtime](native/android/README.md) now runs without Quest Browser or a PC connection. The native integration is still experimental. DRS is unavailable specifically in its pinned Wolvic Chromium 1.4 runtime because reduced eye viewports produced incorrect stereo; full eye rectangles were confirmed correct in the headset.
 
 ## Install your own game data
 

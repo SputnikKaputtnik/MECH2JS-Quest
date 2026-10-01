@@ -3,6 +3,22 @@ import type { WebGLRenderer } from 'three';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('keeps full eye rectangles on Wolvic Chromium 1.4 despite its exposed viewport API', async () => {
+  vi.stubGlobal('navigator', { userAgent: 'Chrome/150.0.0.0 Mobile VR Wolvic/1.4' });
+  vi.resetModules();
+  const g = await import('../../src/app/questGraphics.ts');
+  const views = [{ requestViewportScale: vi.fn() }, { requestViewportScale: vi.fn() }];
+  const renderer = { xr: {
+    getSession: () => ({ visibilityState: 'visible' }), getReferenceSpace: () => ({}),
+    getFrame: () => ({ getViewerPose: () => ({ views }) }),
+    getBaseLayer: () => ({ framebufferWidth: 3360, framebufferHeight: 1760 }),
+  } } as unknown as WebGLRenderer;
+  for (let t = 1; t < 5000; t += 25) g.updateQuestResolution(renderer, t, true);
+  expect(g.dynamicResolutionStatus(renderer)).toEqual({ enabled: true, supported: false, requestedViewportScale: 1 });
+  expect(views[0]!.requestViewportScale).not.toHaveBeenCalled();
+  expect(views[1]!.requestViewportScale).not.toHaveBeenCalled();
+});
+
 it('starts at 125% with FFR on, changes FFR live, and applies stored resolution at the next entry', async () => {
   const stored = new Map<string, string>();
   vi.stubGlobal('localStorage', { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) });

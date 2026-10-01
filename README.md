@@ -2,7 +2,7 @@
 
 Quest 3 adaptation of [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS), based on its `vr-mode` branch. This fork adds offline headset installation, controller pointing and a virtual keyboard, VR comfort options, a cockpit FPS counter, configurable fixed foveation and resolution, and ongoing renderer optimization toward 90 FPS.
 
-**Experimental:** 90 Hz is a target, not a claim of sustained performance. Original game data must be supplied privately and are not included. The app currently runs through Quest Browser/WebXR; an APK launcher is not implemented.
+**Experimental:** 90 Hz is a target, not a claim of sustained performance. Original game data must be supplied privately and are not included. The working browser build is joined by a [standalone Android prototype](native/android/README.md) with an embedded Wolvic Chromium/OpenXR runtime; integration and performance testing are ongoing.
 
 See [Quest setup, controls and measured status](QUEST-STANDALONE.md). The original project's documentation is preserved below.
 

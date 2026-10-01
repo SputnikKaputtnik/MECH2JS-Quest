@@ -11,11 +11,10 @@ import { seedControlFiles } from '../shell/controls/seed.ts';
 import { simOptionsFileEnsure } from '../sim/mech/simOptions.ts';
 import { soundConfigFileEnsure } from '../sim/sound/soundConfigFile.ts';
 import { GameShell } from './GameShell.tsx';
-import { serverInstall } from './fetchSource.ts';
+import { startupInstall } from './startupInstall.ts';
 import { DroppedInstall } from './droppedInstall.ts';
 import { InstallDrop } from './InstallDrop.tsx';
 import type { InstallSource } from '../data/source/FileSource.ts';
-import { offlineInstall } from './questStorage.ts';
 import { QuestSetup } from './QuestSetup.tsx';
 
 /** The developer's route: the mission picker and the editor (?dev in the address). */
@@ -63,7 +62,7 @@ function GameApp() {
 
   useEffect(() => {
     let live = true;
-    void offlineInstall().then(s=>s??serverInstall()).then((s) => {
+    void startupInstall().then((s) => {
       if (!live) return;
       if (s) setInstall(s);
       else setAsking(true);
