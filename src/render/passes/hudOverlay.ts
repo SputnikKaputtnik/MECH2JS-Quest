@@ -34,6 +34,13 @@ import * as THREE from 'three';
 import { HUD_LAYER, type VfxWindow } from '../../engine/vfx/vfx.ts';
 import type { IndexedUniforms } from '../materials/indexedMaterial.ts';
 
+// One aligned store per RGBA pixel. Keep the GPU byte layout independent of
+// native integer byte order (including the unused zero alpha byte).
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+const INDEX_SHIFT = LITTLE_ENDIAN ? 0 : 24;
+const LAYER_SHIFT = LITTLE_ENDIAN ? 8 : 16;
+const INSET_SHIFT = LITTLE_ENDIAN ? 16 : 8;
+
 const vertexShader = /* glsl */ `
 void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }
 `;
@@ -166,6 +173,7 @@ export class HudOverlay {
   readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private tex: THREE.DataTexture | null = null;
   private data = new Uint8Array(0);
+  private packed = new Uint32Array(0);
   private readonly u = {
     uPalette: { value: null as THREE.DataTexture | null },
     uWindow: { value: null as THREE.DataTexture | null },
@@ -276,13 +284,14 @@ export class HudOverlay {
     if (!this.tex || this.tex.image.width !== w || this.tex.image.height !== h) {
       this.tex?.dispose();
       this.data = new Uint8Array(w * h * 4);
+      this.packed = new Uint32Array(this.data.buffer);
       this.tex = new THREE.DataTexture(this.data, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
       this.tex.magFilter = THREE.NearestFilter;
       this.tex.minFilter = THREE.NearestFilter;
       this.u.uWindow.value = this.tex;
       this.u.uWindowSize.value.set(w, h);
     }
-    const d = this.data;
+    const d = this.packed;
     const b = win.buffer;
     const m = win.drawn;
     const l = win.layer;
@@ -295,17 +304,16 @@ export class HudOverlay {
     let mLeft = w, mTop = h, mRight = -1, mBottom = -1;
     // drawn: 255 - its layer (every drawn pixel stays >= 0.5 for the screen pass); not drawn: 0; then the inset mark
     for (let i = 0, n = w * h; i < n; i++) {
-      d[i * 4] = b[i]!;
-      d[i * 4 + 1] = m[i] ? 255 - l[i]! : 0;
-      d[i * 4 + 2] = k[i] ?? 0;
-      if (m[i] && l[i] === reticle) {
+      const layer = m[i] ? l[i]! : -1;
+      d[i] = (b[i]! << INDEX_SHIFT) | ((layer < 0 ? 0 : 255 - layer) << LAYER_SHIFT) | ((k[i] ?? 0) << INSET_SHIFT);
+      if (layer === reticle) {
         const x = i % w, y = (i / w) | 0;
         rx += x;
         ry += y;
         rn++;
         rLeft = Math.min(rLeft, x); rTop = Math.min(rTop, y);
         rRight = Math.max(rRight, x); rBottom = Math.max(rBottom, y);
-      } else if (m[i] && l[i] === HUD_LAYER.targetMarker) {
+      } else if (layer === HUD_LAYER.targetMarker) {
         const x = i % w, y = (i / w) | 0;
         mLeft = Math.min(mLeft, x); mTop = Math.min(mTop, y);
         mRight = Math.max(mRight, x); mBottom = Math.max(mBottom, y);

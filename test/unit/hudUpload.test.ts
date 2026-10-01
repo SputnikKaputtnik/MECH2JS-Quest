@@ -3,6 +3,7 @@ import { HudOverlay } from '../../src/render/passes/hudOverlay.ts';
 import { makeUniforms } from '../../src/render/materials/indexedMaterial.ts';
 import { VfxWindow, vfxWindowAllocate, HUD_LAYER } from '../../src/engine/vfx/vfx.ts';
 import type { ShaderMaterial, Vector4 } from 'three';
+import fc from 'fast-check';
 
 it('reuses HUD pixels between simulation passes while preserving every changed image and layer', () => {
   const cached = new HudOverlay(makeUniforms());
@@ -65,4 +66,37 @@ it('removes empty layers and restores them on target changes and window resize',
   expect(hud.markerMesh.geometry.drawRange.count).toBe(0);
   expect(hud.layerCoverage.marker).toBe(0);
   hud.dispose();
+});
+
+it('packs exactly the original RGBA bytes, including hidden indices, inset IDs and zero alpha', () => {
+  const hud = new HudOverlay(makeUniforms());
+  try {
+    fc.assert(fc.property(
+      fc.integer({ min: 1, max: 33 }), fc.integer({ min: 1, max: 17 }),
+      fc.uint8Array({ minLength: 4, maxLength: 128 }),
+      (width, height, seed) => {
+        const win = new VfxWindow(); vfxWindowAllocate(win, width, height);
+        const want = new Uint8Array(width * height * 4);
+        let sumX = 0, sumY = 0, reticles = 0;
+        for (let i = 0; i < width * height; i++) {
+          win.buffer[i] = seed[i % seed.length]!;
+          win.drawn[i] = seed[(i + 1) % seed.length]! & 1;
+          win.layer[i] = seed[(i + 2) % seed.length]! % 3;
+          win.inset[i] = seed[(i + 3) % seed.length]! % 5;
+          // Independent byte layout, the previous renderer's three byte writes.
+          want[i * 4] = win.buffer[i]!;
+          want[i * 4 + 1] = win.drawn[i] ? 255 - win.layer[i]! : 0;
+          want[i * 4 + 2] = win.inset[i]!;
+          if (win.drawn[i] && win.layer[i] === HUD_LAYER.reticle) {
+            sumX += i % width; sumY += Math.floor(i / width); reticles++;
+          }
+        }
+        hud.update(win, 2100, 2200);
+        expect(hud.windowUniforms.uWindow.value!.image.data).toEqual(want);
+        if (reticles) {
+          expect(hud.reticleCentre!.x).toBe(sumX / reticles + 0.5);
+          expect(hud.reticleCentre!.y).toBe(sumY / reticles + 0.5);
+        } else expect(hud.reticleCentre).toBeNull();
+      }), { seed: 20261001, numRuns: 100 });
+  } finally { hud.dispose(); }
 });

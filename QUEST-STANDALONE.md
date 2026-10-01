@@ -30,6 +30,18 @@ The current target is **90 Hz**, requested when the runtime supports it, with a 
 
 The first measured optimization reuses unchanged HUD pixel uploads between simulation passes. Camera tracking, world rendering, HUD placement and targeting continue every display frame. Changing window dimensions or the source window forces a fresh upload; palette changes remain independent.
 
+HUD updates now pack each RGBA pixel with one aligned 32-bit store instead of three separate byte stores, and read its layer once. The Uint32 view shares the existing texture bytes, with shifts selected for native byte order; palette indices (including hidden ones), layer/inset bytes and zero alpha are unchanged. No extra buffer copy or per-update allocation is introduced.
+
+An isolated on-Quest comparison of the complete CPU `HudOverlay.update` function used identical frozen 640×480 windows, alternating reference/current-source methods after warmup (24 measured batches of 8 updates per variant). The current source method ran on separate benchmark instances, without changing the live game's renderer. Mean CPU update time was:
+
+| Frozen HUD input | Byte-store reference | Packed stores |
+| --- | ---: | ---: |
+| Captured window | 1.805 ms | 1.327 ms |
+| Same window with reticle and target marker | 1.787 ms | 1.346 ms |
+| Full inset view | 2.090 ms | 1.365 ms |
+
+All texture bytes matched. This is approximately 25–35% less CPU time for these HUD updates, excluding actual GPU texture upload/rendering. It saves time on HUD-update frames, not on every 90-Hz display frame. Whole-mission FPS and frame-time benefits have not yet been measured for this change; absolute microbenchmark times depend on device clocks and runtime warmup.
+
 Before this optimization, a 25-second Quest 3 sample at 72 Hz measured 70.9 XR callbacks/s, CPU mean 7.9 ms and p95 10.1 ms, with a combined 3360×1760 XR texture. Profiling identified repeated HUD packing as a significant CPU cost. This is one scene sample, not a general performance guarantee. WebGL GPU timer queries are unavailable on the tested browser, but native `ovrgpuprofiler` surface traces work.
 
 The opaque world now uses one indexed submission per material. Original model-space vertices and palette words are retained; a GPU matrix texture places each part, including moving mech parts. Indices omit CPU-rejected faces and unused clipping slots. Buffer updates copy only changed attributes, and expired object slots are reused for transient effects. Shadows, raycasts, outlines and order-dependent decals retain their original paths. The original CPU clipper, lighting rules and 20-Hz simulation are unchanged. The reticle also reuses an identical depth query until its world revision, camera, projection, reticle or visible mesh set changes.
@@ -62,7 +74,7 @@ Engine, app and tool/test TypeScript checks, ESLint and the production/offline b
 
 Batch tests cover visibility, clipped geometry/colour updates, moving parts, shadow-layer preservation, draw failure recovery, unchanged-buffer reuse and repeated effect replacement. The WebGL comparison at `/test/browser/worldBatch.html` (dev server only, separate browser context) renders reference and batched images of the same frozen mission state. In 15 AMY_SCN1 views at 640×480 it found 0–4 differing pixels per image and no shader errors; moving matrix multiplication to GPU floats can shift edge/dither pixels. One forward view fell from 133 world draw calls/2,479 submitted triangles to 2 calls/734 triangles. This does not replace testing other missions, close clipping, effects and stereo in the headset.
 
-HUD crop checks cover window resizing, pixel-edge guards, target disappearance and cached uploads. `/test/browser/hudCrop.html` compares 36 synthetic stereo/oblique views at two source sizes (0–2 differing output pixels per 960×960 image, no shader errors). Six additional views of an AMY_SCN1 reticle drawn by the original simulation matched exactly. The browser helper also accepts a captured `HudCapture`; an empty capture is rejected rather than counted as a successful visible-image test. The current complete unit suite passes 278 tests; targeted HUD unit/simulation suites pass 10 tests.
+HUD crop checks cover window resizing, pixel-edge guards, target disappearance and cached uploads. `/test/browser/hudCrop.html` compares 36 synthetic stereo/oblique views at two source sizes (0–2 differing output pixels per 960×960 image, no shader errors). Six additional views of an AMY_SCN1 reticle drawn by the original simulation matched exactly. Both browser comparisons were rerun after changing HUD packing. The browser helper also accepts a captured `HudCapture`; an empty capture is rejected rather than counted as a successful visible-image test. The current complete unit suite passes 279 tests. The packing property test checks 100 deterministic combinations of window dimensions, palette bytes, drawn masks, layer tags and inset IDs against the previous independent byte layout, also checking the reticle centre.
 
 Game-dependent tests require private compatible files. A previous full run passed 498 tests with one CD-image-specific golden failure: the image had a 300-sector gap where the reference expected 150. Neither image nor test was modified to conceal it. Tests requiring absent game files skip rather than establish compatibility.
 
