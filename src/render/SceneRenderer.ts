@@ -76,6 +76,7 @@ import { makeIndexedMaterial, makeLineMaterial, makeUniforms, NOT_DRAWN, setLuma
 import { isShadowCaster, SHADOW_LAYER } from './enhance/shadows.ts';
 import type { OwnChassisDraw } from './enhance/ownChassis.ts';
 import { WorldBatch } from './WorldBatch.ts';
+import { currentPolygonKernel, loadPolygonKernel } from './wasm/polygonKernel.ts';
 
 /** A polygon's outline slots: (vertex count + 1) segments, enough for a near-clipped shape. */
 export interface LineEntry {
@@ -140,6 +141,10 @@ export interface FrameStats {
 const pd: PolyDraw = { fill: NOT_DRAWN, kind: FillKind.ByMode, outline: NOT_DRAWN };
 
 export class SceneRenderer {
+  /** Experimental opt-in; TS remains the default and unsupported-mode fallback. */
+  wasmPolygons = false;
+  readonly wasmStats = { meshes: 0, fallback: 0 };
+  async prepareWasmPolygons(): Promise<void> { await loadPolygonKernel(); this.wasmPolygons = true; }
   /** @portOnly Kept switchable for image/performance comparisons with the reference path. */
   batchWorld = true;
   /** @portOnly A/B switch for avoiding unchanged object-world matrix updates. */
@@ -648,6 +653,11 @@ export class SceneRenderer {
    * what the original's clipper hands its filler.
    */
   private shade(m: MeshEntry, L: LightLatch, colour: ColourFn): number {
+    if (this.wasmPolygons) {
+      const count = currentPolygonKernel()?.shade(m, L, colour) ?? null;
+      if (count !== null) { this.wasmStats.meshes++; return count; }
+      this.wasmStats.fallback++;
+    }
     const b = m.block;
     meshResetClipState(b);
     let words = false;

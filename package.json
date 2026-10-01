@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.engine.json && tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && vite build && tsx tools/offline-build.ts",
+    "build": "node tools/check-polygon-wasm.mjs && tsc -p tsconfig.engine.json && tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && vite build && tsx tools/offline-build.ts",
+    "build:polygons": "node tools/build-polygon-wasm.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",

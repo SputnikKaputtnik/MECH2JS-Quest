@@ -15,7 +15,7 @@ import { mainLoopFrame } from '../../src/mission/mainLoop.ts';
 import { seedControlFiles } from '../../src/shell/controls/seed.ts';
 import { setDosFiles } from '../../src/engine/dosFiles.ts';
 
-export async function runWorldBatchComparison() {
+export async function runWorldBatchComparison(variant: 'batch' | 'wasm' = 'batch') {
   const data = await loadGameData(new FetchSource());
   setDosFiles(data.loose);
   seedControlFiles(data.shellExe);
@@ -25,6 +25,7 @@ export async function runWorldBatchComparison() {
   game.setMode('edit');
   game.audio.pause();
   const sr = new SceneRenderer();
+  if (variant === 'wasm') { await sr.prepareWasmPolygons(); sr.wasmPolygons = false; }
   game.bindTextures(sr);
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setSize(640, 480);
@@ -54,7 +55,8 @@ export async function runWorldBatchComparison() {
         sr.sync(viewerFromCamera(camera, viewer(), passViewer));
         sr.setViewport(640, 480);
         const draw = (batched: boolean, bytes: Uint8Array) => {
-          sr.batchWorld = batched;
+          sr.batchWorld = variant === 'wasm' || batched;
+          if (variant === 'wasm') { sr.wasmPolygons = batched; sr.sync(viewerFromCamera(camera, viewer(), passViewer)); }
           renderer.setRenderTarget(target);
           renderer.clear(); renderer.info.reset();
           sr.renderWorld(renderer, camera);
@@ -74,7 +76,8 @@ export async function runWorldBatchComparison() {
     if (!rows.some((r) => r.drawn > 1000)) throw Error('Comparison rendered no visible world');
     // Matrix multiplication moves from CPU doubles to GPU floats. A few pixels
     // along edges/dither thresholds can differ; large differences are a failure.
-    if (rows.some((r) => r.percent > 0.1)) throw Error(`Batched image mismatch: ${JSON.stringify(rows)}`);
+    if (rows.some((r) => variant === 'wasm' ? r.different !== 0 : r.percent > 0.1)) throw Error(`${variant} image mismatch: ${JSON.stringify(rows)}`);
+    if (variant === 'wasm' && sr.wasmStats.meshes === 0) throw Error('Wasm comparison only exercised fallback');
     return rows;
   } finally {
     sr.destroy(); target.dispose(); renderer.dispose(); game.audio.pause();

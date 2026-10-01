@@ -1,0 +1,5 @@
+{
+  "sourceSha256": "a3143d8edb69af0ae77f02083424fecb4695361c10f29296b97baf480392d4a4",
+  "wasmSha256": "058e0930131169566e7ef9108a8f9ce73cb1a8c4d7b98840a7b7b658b67e4df3",
+  "compiler": "Android (12470979, based on r522817c) clang version 18.0.3 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)"
+}
