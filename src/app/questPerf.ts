@@ -12,17 +12,31 @@ export class QuestPerf {
   private supportedHz: number[] = [];
   private memory = {};
   private total = 0;
+  private ended = false;
+  private visible = false;
+  private lastRecordAt: number | null = null;
   simMs = 0;
   private readonly displayRate = new FrameRate();
-  get displayFps(): number | null { return this.displayRate.value; }
+  get displayFps(): number | null { return this.status === 'recording' ? this.displayRate.value : null; }
   get missionFps(): number | null { return this.displayRate.missionAverage; }
-  constructor() {
+  constructor(private readonly clock: () => number = () => performance.now()) {
     (window as unknown as { mw2QuestPerf: QuestPerf }).mw2QuestPerf = this;
+  }
+  /** Preserve the completed mission's samples, but never present them as live. */
+  finish(): void { this.ended = true; }
+  private get status(): 'ended' | 'waiting' | 'paused' | 'stale' | 'recording' {
+    if (this.ended) return 'ended';
+    if (this.lastRecordAt === null) return 'waiting';
+    if (!this.visible) return 'paused';
+    return this.clock() - this.lastRecordAt > 1500 ? 'stale' : 'recording';
   }
   // Diagnostic sampling can restart without erasing the player's mission average.
   reset(): void { this.samples = []; this.last = 0; this.total = 0; }
   record(now: number, cpu: number, renderer: WebGLRenderer): void {
+    if (this.ended) return;
     const session = renderer.xr.getSession();
+    this.visible = session?.visibilityState === 'visible';
+    if (this.visible) this.lastRecordAt = this.clock();
     this.displayRate.sample(now, session?.visibilityState === 'visible');
     if (!session || session.visibilityState !== 'visible') { this.last = 0; return; }
     const dt = this.last ? now - this.last : 0;
@@ -48,7 +62,7 @@ export class QuestPerf {
       return { mean: a.reduce((s,v)=>s+v,0)/(n||1), p50:a[Math.floor(n*.5)]??0, p95:a[Math.floor(n*.95)]??0, p99:a[Math.floor(n*.99)]??0, max:a[n-1]??0 };
     };
     const interval=stat('dt'), budget=1000/(this.hz||QUEST_TARGET_HZ);
-    return { samples:n,totalSamples:this.total, displayFps:this.displayFps, missionFps:this.missionFps, seconds:this.samples.reduce((s,v)=>s+v.dt,0)/1000, requestedHz:QUEST_TARGET_HZ, sessionHz:this.hz,
+    return { status:this.status,lastFrameAgeMs:this.lastRecordAt === null ? null : Math.max(0,this.clock()-this.lastRecordAt), samples:n,totalSamples:this.total, displayFps:this.displayFps, missionFps:this.missionFps, seconds:this.samples.reduce((s,v)=>s+v.dt,0)/1000, requestedHz:QUEST_TARGET_HZ, sessionHz:this.hz,
       supportedHz:this.supportedHz, eyeBuffers:this.eyeBuffers, foveation:this.foveation, requestedRenderScale:renderScale(),
       xrCallbackHz:interval.mean?1000/interval.mean:0,intervalMs:interval,cpuMs:stat('cpu'),simCpuMs:stat('sim'),
       lateIntervals:this.samples.filter(s=>s.dt>budget*1.5).length,drawCalls:stat('calls'),triangles:stat('triangles'),framebuffer:this.framebuffer,memory:this.memory,

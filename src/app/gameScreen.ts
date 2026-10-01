@@ -819,6 +819,7 @@ export class GameScreen {
   }
 
   dispose(): void {
+    this.questPerf.finish();
     const { webgl } = this;
     const host = this.opts.host;
     // a host's renderer, loop and session go on to the next view
