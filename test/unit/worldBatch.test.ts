@@ -112,4 +112,43 @@ describe('opaque world batching', () => {
     }
     batch.dispose();
   });
+
+  it('restores layers across nested draws and failures, then releases scratch mesh references', () => {
+    const { scene, sources, batch } = fixture();
+    sources[1]!.layers.enable(5);
+    const masks = sources.map(s => s.layers.mask);
+    const scratch = () => (batch as unknown as { suppression: Array<{ sources: Array<unknown> }> }).suppression;
+    batch.render(scene, sources, () => {
+      expect(() => batch.render(scene, sources, () => { throw Error('nested failure'); })).toThrow('nested failure');
+      expect(sources.every(s => s.layers.mask === 0)).toBe(true);
+    });
+    expect(sources.map(s => s.layers.mask)).toEqual(masks);
+    for (const level of scratch()) expect(level.sources.every(s => s === null)).toBe(true);
+    batch.render(scene, sources.slice(0, 1), () => {});
+    batch.render(scene, [], () => {});
+    for (const level of scratch()) expect(level.sources.every(s => s === null)).toBe(true);
+    batch.dispose();
+    expect(scratch()).toHaveLength(0);
+  });
+
+  it('reconciles changed vertex counts, expired slots and returning sources', () => {
+    const { scene, sources, batch, output } = fixture();
+    batch.render(scene, sources, () => {});
+    const source = sources[0]!;
+    const old = source.geometry;
+    const grown = new THREE.BufferGeometry();
+    for (const name of Object.keys(old.attributes)) {
+      const attribute = old.getAttribute(name);
+      const data = new Float32Array(attribute.array.length * 2);
+      data.set(attribute.array); data.set(attribute.array, attribute.array.length);
+      grown.setAttribute(name, new THREE.BufferAttribute(data, attribute.itemSize));
+    }
+    source.geometry = grown;
+    batch.render(scene, sources, () => expect(output().geometry.drawRange.count).toBe(12));
+    batch.render(scene, [sources[1]!], () => expect(output().geometry.drawRange.count).toBe(3));
+    batch.render(scene, sources, () => expect(output().geometry.drawRange.count).toBe(12));
+    source.geometry = old;
+    batch.render(scene, sources, () => expect(output().geometry.drawRange.count).toBe(9));
+    grown.dispose(); batch.dispose();
+  });
 });

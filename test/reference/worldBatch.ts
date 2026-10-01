@@ -1,3 +1,4 @@
+/** Frozen batching implementation before suppression scratch-buffer reuse. */
 /**
  * @portOnly Submit opaque world parts together, keeping original model-space
  * attributes and palette words. A vertex's object ID selects its world matrix
@@ -20,7 +21,6 @@ interface Slot {
   active: boolean;
   versions: number[];
   visible: boolean;
-  roster: number;
 }
 
 class MaterialBatch {
@@ -33,7 +33,6 @@ class MaterialBatch {
   private matrices = new Float32Array(0);
   private texture: THREE.DataTexture | null = null;
   private readonly matrix = new THREE.Matrix4();
-  private roster = 0;
 
   constructor(material: THREE.ShaderMaterial) {
     const batched = material.clone();
@@ -72,7 +71,7 @@ class MaterialBatch {
     let start = 0;
     for (const source of sources) {
       const count = source.geometry.getAttribute('position').count;
-      const slot: Slot = { source, start, count, capacity: count, active: true, versions: ATTRIBUTES.map(() => -1), visible: false, roster: 0 };
+      const slot: Slot = { source, start, count, capacity: count, active: true, versions: ATTRIBUTES.map(() => -1), visible: false };
       ids.fill(this.slots.length, start, start + count);
       this.slots.push(slot);
       this.bySource.set(source, slot);
@@ -84,17 +83,12 @@ class MaterialBatch {
   /** Reuse expired effect/LOD slots. Repack only when reserved capacity runs out,
    * not every time a projectile or explosion joins/leaves the object list. */
   private reconcile(sources: Source[]): boolean {
-    // Mark existing slots instead of allocating a Set and iterating Map pairs.
-    const roster = ++this.roster;
-    for (const source of sources) {
-      const slot = this.bySource.get(source);
-      if (slot && slot.count === source.geometry.getAttribute('position').count) slot.roster = roster;
-    }
+    const wanted = new Set(sources);
     let changed = false;
-    for (const slot of this.slots) {
-      if (!slot.active || slot.roster === roster) continue;
+    for (const [source, slot] of this.bySource) {
+      if (wanted.has(source) && slot.count === source.geometry.getAttribute('position').count) continue;
       slot.active = slot.visible = false;
-      this.bySource.delete(slot.source);
+      this.bySource.delete(source);
       changed = true;
     }
     for (const source of sources) {
@@ -110,7 +104,7 @@ class MaterialBatch {
           this.rebuild(sources);
           return true;
         }
-        slot = { source, count, capacity: count, start: this.usedVertices, active: true, visible: false, versions: ATTRIBUTES.map(() => -1), roster };
+        slot = { source, count, capacity: count, start: this.usedVertices, active: true, visible: false, versions: ATTRIBUTES.map(() => -1) };
         const ids = this.mesh.geometry.getAttribute('aObject') as THREE.BufferAttribute;
         (ids.array as Float32Array).fill(this.slots.length, slot.start, slot.start + count);
         ids.addUpdateRange(slot.start, count); ids.needsUpdate = true;
@@ -194,8 +188,6 @@ class MaterialBatch {
 
 export class WorldBatch {
   private readonly batches = new Map<THREE.ShaderMaterial, MaterialBatch>();
-  private readonly suppression: Array<{ sources: Array<Source | null>; masks: number[] }> = [];
-  private renderDepth = 0;
 
   /** Source list includes all LODs, including hidden ones, in stable object order. */
   render(scene: THREE.Scene, sources: Source[], draw: () => void, layerMask = 1): void {
@@ -215,23 +207,14 @@ export class WorldBatch {
       batch.update(group, layerMask);
     }
     for (const [material, batch] of this.batches) if (!groups.has(material)) batch.mesh.visible = false;
-    // Keep numeric storage, but release mesh references after every draw. A
-    // separate level preserves restoration if a draw callback renders again.
-    const saved = this.suppression[this.renderDepth] ??= { sources: [], masks: [] };
-    this.renderDepth++;
-    let count = 0;
+    const suppressed: Array<[Source, number]> = [];
     try {
       for (const group of groups.values()) for (const source of group) {
-        saved.sources[count] = source; saved.masks[count++] = source.layers.mask;
-        source.layers.mask = 0;
+        suppressed.push([source, source.layers.mask]); source.layers.mask = 0;
       }
       draw();
     } finally {
-      for (let i = 0; i < count; i++) {
-        saved.sources[i]!.layers.mask = saved.masks[i]!;
-        saved.sources[i] = null;
-      }
-      this.renderDepth--;
+      for (const [source, mask] of suppressed) source.layers.mask = mask;
       for (const batch of this.batches.values()) batch.mesh.visible = false;
     }
   }
@@ -239,6 +222,5 @@ export class WorldBatch {
   dispose(): void {
     for (const batch of this.batches.values()) batch.dispose();
     this.batches.clear();
-    this.suppression.length = 0;
   }
 }
