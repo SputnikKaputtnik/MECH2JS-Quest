@@ -7,6 +7,27 @@ import { IDLE_PAD, PadMapper, type PadState } from '../../src/app/xrPads.ts';
 const pad = (p: Partial<PadState>): PadState => ({ ...IDLE_PAD, ...p });
 
 describe('PadMapper', () => {
+  it('releases combat input and waits for neutral before accepting a menu choice', () => {
+    const m = new PadMapper();
+    m.update(pad({ rTrigger: 1, ly: -1, rx: 1 }));
+    const opened = m.update(pad({ rTrigger: 1, ly: -1, rx: 1 }), true);
+    expect(opened.keys.every(k => !k.down)).toBe(true);
+    expect(opened.torso).toEqual([0, 0]);
+    expect(m.update(pad({ rTrigger: 1 }), true).keys).toEqual([]);
+    m.update(pad({}), true);
+    expect(m.update(pad({ a: true, ly: -1 }), true).keys).toEqual([
+      { code: 'ArrowUp', down: true }, { code: 'Enter', down: true },
+    ]);
+    expect(m.update(pad({ a: true }), false).keys.every(k => !k.down)).toBe(true);
+    expect(m.update(pad({ a: true }), false).keys).toEqual([]);
+  });
+
+  it('uses X for jump jets in combat and ignores combat actions in menus', () => {
+    const m = new PadMapper();
+    expect(m.update(pad({ x: true })).keys).toEqual([{ code: 'KeyJ', down: true }]);
+    m.update(pad({}), true); m.update(pad({}), true);
+    expect(m.update(pad({ x: true, rGrip: 1, lGrip: 1, rx: 1 })).keys).toEqual([]);
+  });
   it('presses and releases a button once each', () => {
     const m = new PadMapper();
     expect(m.update(pad({ a: true })).keys).toEqual([{ code: 'KeyE', down: true }]);

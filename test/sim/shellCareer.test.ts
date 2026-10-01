@@ -6,7 +6,11 @@
 // the next scenario, LAUNCH, and main's state 10 writing mw2prm.cfg, the
 // star files and instmap1.bwd. There is no CD and no loose smk\ files, so
 // every movie and animation fails to open, as it would without them.
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { IDLE_PAD, type PadState } from '../../src/app/xrPads.ts';
+import { QuestShellInput } from '../../src/app/shell/questShellInput.ts';
+const vrInput = vi.hoisted(() => ({ pad: {} as PadState }));
+vi.mock('../../src/app/xrInput.ts', () => ({ readPads: () => vrInput.pad }));
 import { ExeImage } from '../../src/data/exe/ExeImage.ts';
 import { ProjectFile } from '../../src/data/prj/ProjectFile.ts';
 import { dosFileLoad, setCdDrive, setDosFiles, setOverlayFiles, setOwnFiles } from '../../src/engine/dosFiles.ts';
@@ -22,6 +26,7 @@ import { codeInfo, resolveCode } from '../../src/engine/codePtr.ts';
 import { shell } from '../../src/shell/state.ts';
 import { WIDGET, WIDGET_ROW } from '../../src/shell/ui/widgets.ts';
 import { gameSource, hasGameData, hasShellData } from '../support/env.ts';
+import { resetShellInput } from '../../src/app/shell/shellInputBoundary.ts';
 
 /** One action of a script: taken `after` frames once `until` holds. */
 interface Step {
@@ -136,7 +141,18 @@ describe.runIf(hasGameData && hasShellData)('shell career screens', () => {
         ...click(530, 300, undefined, 30),
         // the hall sends a pilotless player to the register; slot 1 (32..297 x 83..116) is empty: type a name
         ...click(100, 100, at(0xc), 30),
-        { after: 10, act: () => hardware.keys.push(0x74, 0x65, 0x73, 0x74, 0x0d) }, // 'test' Enter
+        { after: 10, act: () => {
+          // The real register editor activates the virtual keyboard without X.
+          expect(hardware.textEntry).toMatchObject({ text: '', maxChars: 14 });
+          const keyboard = new QuestShellInput();
+          const session = { visibilityState: 'visible' } as XRSession;
+          let now = 0;
+          for (const index of [19, 4, 18, 19, 38]) { // TEST + OK
+            const ray = { x: (index % 10) * 64 + 32, y: 350 + Math.floor(index / 10) * 35 };
+            vrInput.pad = { ...IDLE_PAD }; keyboard.poll(session, 14, now += 14, ray);
+            vrInput.pad = { ...IDLE_PAD, rTrigger: 1 }; keyboard.poll(session, 14, now += 14, ray);
+          }
+        } },
         // ACCEPT (294..393 x 450..474)
         ...click(344, 462, undefined, 30),
         // the hall again, with a pilot: READY ROOM (20..90 x 245..411)
@@ -148,6 +164,7 @@ describe.runIf(hasGameData && hasShellData)('shell career screens', () => {
       expect(done).toBe(15);
       expect(seen).toEqual([1, 0xc, 1, 0xb]);
       expect(reachedBriefing).toBe(true);
+      expect(hardware.textEntry).toBeNull();
       // the probe's -3: main quits through prm_save(-3, ..., 'exittos')
       expect(status).toBe(0xff);
       expect(prmCommandLine(dosFileLoad('mw2prm.cfg')!).startsWith('exittos -b=')).toBe(true);
@@ -258,5 +275,54 @@ describe.runIf(hasGameData && hasShellData)('shell career screens', () => {
     expect(tag(dosFileLoad('INSTMAP1.BWD'))).toBe('BWD');
     expect(tag(dosFileLoad('USERSTAR.BWD'))).toBe('BWD');
     for (let i = 1; i <= 5; i++) expect(tag(dosFileLoad(`EN0${i}STAR.BWD`))).toBe('BWD');
+  });
+
+  it('returning from a mission drops old clicks over LAUNCH but accepts a fresh launch', async () => {
+    resetShellInput();
+    const seen = recordStates();
+    const initial = start();
+    await runSteps(initial, [
+      ...click(320, 350, undefined, 30),
+      ...click(335, 407, () => seen.includes(7), 30),
+    ]);
+    expect(initial.status).toBe(3);
+
+    const oldClicks = () => {
+      // The Quest trace had 42 queued transitions while the physical button was up.
+      hardware.mouseButtons = 0;
+      hardware.mouseButtonQueue.length = 0;
+      for (let i = 0; i < 21; i++) { hwMouseButtons(1); hwMouseButtons(0); }
+      hardware.keys.push(13);
+    };
+    const watchReturn = async (pump: ShellPump) => {
+      for (let f = 0; f < 240; f++) {
+        // The controller cursor remains over LAUNCH, as in the reported failure.
+        hwMouseMove(335, 407);
+        if (!pump.frame(1000 / 60)) break;
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    };
+    // Negative control: this fixture really relaunches without the boundary reset.
+    oldClicks();
+    startShellProcess(shellExe, prj);
+    const unguarded = new ShellPump(shellMain(['mw2shell.exe', 'sim']));
+    await watchReturn(unguarded);
+    expect(unguarded.error).toBeNull();
+    expect(unguarded.status).toBe(3);
+
+    oldClicks();
+    startShellProcess(shellExe, prj);
+    const resumed = new ShellPump(shellMain(['mw2shell.exe', 'sim']));
+    resetShellInput(); // ShellView's entry boundary
+    await watchReturn(resumed);
+    expect(resumed.error).toBeNull();
+    expect(seen.filter(s => s === 7)).toHaveLength(3);
+    expect(resumed.status).toBeNull();
+    expect(hardware.keys).toEqual([]);
+    expect(hardware.mouseButtonQueue).toEqual([]);
+
+    await runSteps(resumed, click(335, 407, undefined, 1));
+    expect(resumed.error).toBeNull();
+    expect(resumed.status).toBe(3);
   });
 });

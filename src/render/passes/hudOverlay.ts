@@ -240,11 +240,15 @@ export class HudOverlay {
     return s.x > 0 ? s.y / s.x : 0.75;
   }
 
-  /** Uploads the window's pixels; false when it has none yet (before video_init). */
-  update(win: VfxWindow, targetWidth: number, targetHeight: number): boolean {
+  private uploadedWindow: VfxWindow | null = null;
+
+  /** Upload only after a simulation pass changes pixels; head pose and target size still update every frame. */
+  update(win: VfxWindow, targetWidth: number, targetHeight: number, pixelsChanged = true): boolean {
     const w = win.xMax + 1;
     const h = win.yMax + 1;
     if (w <= 0 || h <= 0 || win.buffer.length < w * h) return false;
+    this.u.uTarget.value.set(targetWidth, targetHeight);
+    if (!pixelsChanged && win === this.uploadedWindow && this.tex?.image.width === w && this.tex.image.height === h) return true;
     if (!this.tex || this.tex.image.width !== w || this.tex.image.height !== h) {
       this.tex?.dispose();
       this.data = new Uint8Array(w * h * 4);
@@ -277,7 +281,7 @@ export class HudOverlay {
     this.reticleCount = rn;
     if (rn > 0) this.reticleAt.set(rx / rn + 0.5, ry / rn + 0.5);
     this.tex.needsUpdate = true;
-    this.u.uTarget.value.set(targetWidth, targetHeight);
+    this.uploadedWindow = win;
     return true;
   }
 

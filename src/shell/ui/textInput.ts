@@ -8,7 +8,7 @@
 import { vfxCharacterWidth } from '../../engine/vfx/vfx.ts';
 import { mouse, shell } from '../state.ts';
 import type { Blocking } from '../host/blocking.ts';
-import { getch, kbhit } from '../host/hardware.ts';
+import { getch, kbhit, hardware } from '../host/hardware.ts';
 import { animUpdateAll } from '../anim/anims.ts';
 import { mouseLeftClicked, mouseUpdate } from './mouse.ts';
 import { labelCreate, labelDestroy, textWidth, type FontHolder, type TextLabel } from './labels.ts';
@@ -51,6 +51,18 @@ export interface TextInputResult {
  * @fidelity exact
  */
 export function* textInput(font: FontHolder, x: number, y: number, buffer: string, colour: Uint8Array | null, maxChars: number, maxWidth: number): Blocking<TextInputResult> {
+  // @portOnly expose editor lifetime and text to the VR keyboard, leaving editing rules unchanged.
+  const entry = { text: buffer, maxChars };
+  hardware.textEntry = entry;
+  try {
+    return yield* editText(font, x, y, buffer, colour, maxChars, maxWidth, entry);
+  } finally {
+    if (hardware.textEntry === entry) hardware.textEntry = null;
+  }
+}
+
+/** @portOnly body of textInput, with a read-only mirror for the headset. */
+function* editText(font: FontHolder, x: number, y: number, buffer: string, colour: Uint8Array | null, maxChars: number, maxWidth: number, entry: { text: string }): Blocking<TextInputResult> {
   // 0xa2148: the edit buffer, the text and its cursor
   let n = buffer.length;
   let edit = buffer + '_'; // 0x76a45 '_'
@@ -65,6 +77,7 @@ export function* textInput(font: FontHolder, x: number, y: number, buffer: strin
     return { accepted, text: edit };
   };
   for (;;) {
+    entry.text = edit.slice(0, n);
     animUpdateAll();
     yield* mouseUpdate(m);
     if (mouseLeftClicked(m) === 1) return finish(1);

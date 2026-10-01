@@ -43,8 +43,20 @@ export interface KeyChange {
 export class PadMapper {
   private readonly held = new Set<string>();
   private torsoActive = false;
+  private menuMode = false;
+  private awaitNeutral = false;
 
-  update(p: PadState): { keys: KeyChange[]; torso: [number, number] | null } {
+  update(p: PadState, menu = false): { keys: KeyChange[]; torso: [number, number] | null } {
+    if (menu !== this.menuMode) {
+      this.menuMode = menu;
+      this.awaitNeutral = true;
+      return { keys: this.reset(), torso: [0, 0] };
+    }
+    if (this.awaitNeutral) {
+      const neutral = Object.values(p).every(v => typeof v === 'boolean' ? !v : Math.abs(v) < 0.2);
+      if (!neutral) return { keys: [], torso: null };
+      this.awaitNeutral = false;
+    }
     const keys: KeyChange[] = [];
     const set = (code: string, down: boolean) => {
       if (down === this.held.has(code)) return;
@@ -54,24 +66,26 @@ export class PadMapper {
     };
     const analog = (code: string, v: number) => set(code, this.held.has(code) ? v > RELEASE : v > PRESS);
     // stick y is negative pushed forward
-    analog('Equal', -p.ly);
-    analog('Minus', p.ly);
+    analog('Equal', menu ? 0 : -p.ly);
+    analog('Minus', menu ? 0 : p.ly);
     analog('ArrowLeft', -p.lx);
     analog('ArrowRight', p.lx);
-    set('Backquote', p.lClick);
-    analog('Enter', p.lTrigger);
-    analog('Digit1', p.lGrip);
-    set('KeyC', p.x);
-    set('Escape', p.y);
-    set('KeyM', p.rClick);
-    analog('Space', p.rTrigger);
-    analog('Semicolon', p.rGrip);
-    set('KeyE', p.a);
-    set('KeyT', p.b);
+    analog('ArrowUp', menu ? -p.ly : 0);
+    analog('ArrowDown', menu ? p.ly : 0);
+    set('Backquote', !menu && p.lClick);
+    analog('Enter', menu ? Math.max(p.rTrigger, p.a ? 1 : 0) : p.lTrigger);
+    analog('Digit1', menu ? 0 : p.lGrip);
+    set('KeyJ', !menu && p.x);
+    set('Escape', p.y || (menu && p.b));
+    set('KeyM', !menu && p.rClick);
+    analog('Space', menu ? 0 : p.rTrigger);
+    analog('Semicolon', menu ? 0 : p.rGrip);
+    set('KeyE', !menu && p.a);
+    set('KeyT', !menu && p.b);
     // the torso: while deflected, and once more at rest to centre it
     const dz = (v: number) => (Math.abs(v) < DEAD ? 0 : (v - Math.sign(v) * DEAD) / (1 - DEAD));
-    const tx = dz(p.rx);
-    const ty = dz(p.ry);
+    const tx = menu ? 0 : dz(p.rx);
+    const ty = menu ? 0 : dz(p.ry);
     let torso: [number, number] | null = null;
     if (tx !== 0 || ty !== 0) {
       torso = [tx, ty];

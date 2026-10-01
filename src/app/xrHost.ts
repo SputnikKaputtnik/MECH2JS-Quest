@@ -13,9 +13,9 @@
  *  - The front end's views (app/shell/ShellView.tsx, LaunchView.tsx) paint
  *    their 640x480 canvas as always, the page showing it, and hand the host
  *    that canvas (showScreen): in the headset it is a panel in a dark room
- *    (render/xr/screenRoom.ts). The mouse and keyboard play it as they play
- *    the page - the mouse locked to the page and moved by its motion, since
- *    the pilot cannot see the page's pointer (ShellView.tsx).
+ *    (render/xr/screenRoom.ts). The right controller's target ray is mapped
+ *    through the curved panel's UVs to the original mouse coordinates.
+ *    ShellView supplies clicks and a virtual keyboard for text fields.
  *  - Their frames come from the host's loop (onTick), which is the
  *    window's animation frames outside the headset and the headset's inside
  *    it: a browser may stop the window's frames while a session is on.
@@ -26,6 +26,8 @@
  * @portOnly the host of the game's headset
  */
 import * as THREE from 'three';
+import { configureQuestSession } from './questSession.ts';
+import { applyQuestFoveation, prepareQuestGraphics } from './questGraphics.ts';
 import { ScreenRoom, type ScreenSource } from '../render/xr/screenRoom.ts';
 
 export interface XrHostState {
@@ -33,6 +35,8 @@ export interface XrHostState {
   on: boolean;
   /** asked for, and the headset has not given it yet (the browser and the XR runtime can take a minute) */
   pending: boolean;
+  /** A failed entry stays visible instead of silently continuing in 2D. */
+  error?: string | null;
 }
 
 type Frame = (now: number) => void;
@@ -43,6 +47,10 @@ export class XrHost {
   private readonly tickers = new Set<Frame>();
   private readonly room = new ScreenRoom();
   private screen: ScreenSource | null = null;
+  screenPointer: { x: number; y: number } | null = null;
+  private readonly pointerOrigin = new THREE.Vector3();
+  private readonly pointerDirection = new THREE.Vector3();
+  private readonly pointerRotation = new THREE.Quaternion();
   private state: XrHostState = { on: false, pending: false };
   private readonly listeners = new Set<(s: XrHostState) => void>();
 
@@ -84,18 +92,21 @@ export class XrHost {
   enter(): Promise<boolean> {
     if (this.renderer.xr.getSession()) return Promise.resolve(true);
     if (this.state.pending || !navigator.xr) return Promise.resolve(false);
-    this.set({ pending: true });
+    this.set({ pending: true, error: null });
     return navigator.xr
       .requestSession('immersive-vr', { optionalFeatures: ['local'] })
       .then(async (session) => {
         session.addEventListener('end', this.onEnd, { once: true });
+        prepareQuestGraphics(this.renderer);
         await this.renderer.xr.setSession(session);
+        await configureQuestSession(session);
         this.set({ on: true, pending: false });
         return true;
       })
       .catch((err: unknown) => {
         console.warn('VR session refused', err);
-        this.set({ pending: false });
+        const detail = err instanceof Error ? err.message : String(err);
+        this.set({ pending: false, error: `VR-Start fehlgeschlagen: ${detail}. Bitte das Spielfenster im aufgesetzten Headset öffnen und erneut versuchen.` });
         return false;
       });
   }
@@ -130,7 +141,24 @@ export class XrHost {
     if (this.screen === canvas) this.screen = null;
   }
 
-  private readonly loop = (now: number): void => {
+  private readonly loop = (now: number, frame?: XRFrame): void => {
+    this.screenPointer = null;
+    this.room.pointAt(null);
+    const session = this.renderer.xr.getSession();
+    if (session) applyQuestFoveation(this.renderer);
+    const reference = this.renderer.xr.getReferenceSpace();
+    if (frame && reference && this.screen && !this.presenter && session?.visibilityState === 'visible') {
+      const right = [...session.inputSources].find(s => s.handedness === 'right');
+      const pose = right ? frame.getPose(right.targetRaySpace, reference) : null;
+      this.room.show(this.screen);
+      if (pose) {
+        const p = pose.transform.position, q = pose.transform.orientation;
+        this.pointerOrigin.set(p.x, p.y, p.z);
+        this.pointerRotation.set(q.x, q.y, q.z, q.w);
+        this.pointerDirection.set(0, 0, -1).applyQuaternion(this.pointerRotation);
+        this.screenPointer = this.room.pointAt(this.pointerOrigin, this.pointerDirection);
+      }
+    }
     for (const t of [...this.tickers]) t(now);
     if (this.presenter) {
       this.presenter(now);

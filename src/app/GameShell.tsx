@@ -39,6 +39,7 @@ export function GameShell({ data, game }: { data: GameData; game: Game }) {
   const [vrSupported, setVrSupported] = useState(false);
   const [host, setHost] = useState<XrHost | null>(null);
   const [vr, setVr] = useState<XrHostState>({ on: false, pending: false });
+  const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
     void XrHost.supported().then(setVrSupported);
@@ -96,20 +97,26 @@ export function GameShell({ data, game }: { data: GameData; game: Game }) {
 
   /**
    * Start in VR: the sound turned on inside the click (the headset can take a minute to answer, long
-   * after the click stops counting), then the game once the headset shows it - or on the page if it
-   * is refused.
+   * after the click stops counting), then the game only once the headset shows it.
    */
   const startVr = useCallback(() => {
     if (started.current || host) return;
+    setStartError(null);
     game.audio.enable();
     const h = new XrHost();
     setHost(h);
-    void h.enter().then(() =>
-      start().catch((e: unknown) => {
+    void h.enter().then((entered) => {
+      if (!entered) {
+        game.audio.disable();
+        setStartError('VR konnte nicht gestartet werden. Bitte Headset aufsetzen, die Browserfreigabe bestätigen und erneut „Start in VR“ wählen.');
+        setHost(null);
+        return;
+      }
+      return start().catch((e: unknown) => {
         console.error('[shell] start-up failed', e);
         setShowing({ kind: 'quit' });
-      }),
-    );
+      });
+    });
   }, [game, host, start]);
 
   useEffect(() => {
@@ -134,17 +141,18 @@ export function GameShell({ data, game }: { data: GameData; game: Game }) {
     });
   if (showing.kind === 'start' && host)
     return (
-      <div className="shell-start" onClick={flatStart}>
-        <div>{vr.pending ? 'Put on the headset' : 'Starting'}</div>
-        {vr.pending && <div className="hint">The browser and the headset can take a minute to start VR</div>}
-        {vr.pending && <div className="hint">Click to play on the screen instead</div>}
+      <div className="shell-start">
+        <div>{vr.pending ? 'VR-Freigabe im Headset bestätigen' : 'Starting'}</div>
+        {vr.pending && <div className="hint">Bitte Headset aufsetzen. Die Browserfreigabe kann außerhalb dieses Fensters erscheinen.</div>}
       </div>
     );
   if (showing.kind === 'start')
     return (
       <div className="shell-start" onClick={flatStart}>
         <div>MechWarrior 2</div>
+        {startError && <div className="hint" role="alert" onClick={e => e.stopPropagation()}>{startError}</div>}
         <div className="hint">Click to start</div>
+        <a href="?setup" className="hint" onClick={e=>e.stopPropagation()}>Offline installieren / Spielstände sichern</a>
         {vrSupported && (
           <button
             className="shell-vr"
@@ -160,9 +168,12 @@ export function GameShell({ data, game }: { data: GameData; game: Game }) {
     );
   // with the game's headset: a button to leave it, or to put the game back in it once its session ended
   const vrButton = host && (
+    <>
     <button className="shell-vr corner" disabled={vr.pending} onClick={() => (vr.on ? host.leave() : void host.enter())}>
       {vr.pending ? 'Waiting for the headset' : vr.on ? 'Leave VR' : 'Enter VR'}
     </button>
+    {vr.error && <div role="alert" style={{ position: 'absolute', top: 60, left: 20, right: 20, background: '#101820', color: 'white', padding: 16, zIndex: 10 }}>{vr.error}</div>}
+    </>
   );
   if (showing.kind === 'shell')
     return (

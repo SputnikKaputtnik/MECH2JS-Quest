@@ -36,6 +36,11 @@ import { Viewer } from '../generated/classes.gen.ts';
 import type { Game } from './Game.ts';
 import { attachHostInput } from './hostInput.ts';
 import { XrInput } from './xrInput.ts';
+import { configureQuestSession } from './questSession.ts';
+import { applyQuestFoveation, prepareQuestGraphics } from './questGraphics.ts';
+import { QuestPerf } from './questPerf.ts';
+import { QuestComfortMenu, fpsCounterEnabled } from './questComfort.ts';
+import { FpsOverlay } from '../render/xr/fpsOverlay.ts';
 import type { XrHost } from './xrHost.ts';
 import { SceneRenderer } from '../render/SceneRenderer.ts';
 import { fromThree, toThree } from '../render/bridge/space.ts';
@@ -168,6 +173,9 @@ export class GameScreen {
   private lastPalette: string;
   private paletteDirty = false;
   private last = performance.now();
+  private readonly questPerf = new QuestPerf();
+  private readonly fpsOverlay = new FpsOverlay();
+  private readonly questComfort = new QuestComfortMenu();
 
   private cockpitKey: string | null = null;
   private cockpitRampsOf: string | null = null;
@@ -252,6 +260,9 @@ export class GameScreen {
     // the renderer's loop: the window's animation frames, or the headset's while a session is on
     const loop = (now: number) => {
       const start = performance.now();
+      webgl.info.autoReset = false;
+      webgl.info.reset();
+      this.questPerf.simMs = 0;
       // the headset's framebuffer for this frame: three binds it before calling back
       const xrTarget = webgl.xr.isPresenting ? webgl.getRenderTarget() : null;
       this.frame(now);
@@ -260,6 +271,7 @@ export class GameScreen {
         else if (this.mirror.on) this.spectate(xrTarget);
       }
       this.timeXrFrame(start);
+      this.questPerf.record(now, performance.now() - start, webgl);
     };
     if (opts.host) opts.host.present(loop);
     else webgl.setAnimationLoop(loop);
@@ -309,7 +321,9 @@ export class GameScreen {
       .then(async (session) => {
         entry.granted = performance.now();
         session.addEventListener('end', this.onXrEnd, { once: true });
+        prepareQuestGraphics(webgl);
         await webgl.xr.setSession(session);
+        await configureQuestSession(session);
         entry.set = performance.now();
         this.setVrState({ on: true });
         done();
@@ -362,6 +376,8 @@ export class GameScreen {
     this.last = now;
     const session = renderer.xr.isPresenting ? renderer.xr.getSession() : null;
     const xr = session !== null;
+    if (xr) applyQuestFoveation(renderer);
+    this.questComfort.update(xr);
     // a session that ended (the host's, which this view does not hear end) lets go of the controllers' keys
     if (!xr && this.xrWas) this.xrInput.release();
     this.xrWas = xr;
@@ -387,7 +403,9 @@ export class GameScreen {
         views.beginFrame();
         passed = true;
       };
+      const simStart = performance.now();
       if (!game.playFrame(elapsedMs, onPass)) game.setMode('edit');
+      this.questPerf.simMs = performance.now() - simStart;
     }
     // after the frame: the loop may have ended and left Edit. A headset always looks through the game's camera
     const outside = this.opts.lookThrough?.(dt, xr) ?? null;
@@ -540,7 +558,7 @@ export class GameScreen {
       xrPasses.push({ draw, world });
     };
     this.xrFrameDt = dt;
-    const hudReady = !scene && hudOverlay.update(game.windowShown(), drawSize.x, drawSize.y);
+    const hudReady = !scene && hudOverlay.update(game.windowShown(), drawSize.x, drawSize.y, passed || !playing || game.netBoot !== null);
     /** the HUD layers drawn apart this frame, in the world (a headset only) */
     let lifted = 0;
     renderer.clear();
@@ -632,6 +650,10 @@ export class GameScreen {
           renderer.render(rig.hudScene, c);
         });
       } else renderer.render(hudOverlay.scene, hudOverlay.camera);
+    }
+    if (head && session?.visibilityState === 'visible' && cameraGlobals.cockpitViewActive !== 0 && fpsCounterEnabled()) {
+      this.fpsOverlay.update(this.questPerf.displayFps, rig.rig);
+      renderer.render(this.fpsOverlay.scene, rig.camera);
     }
     this.opts.afterFrame?.(now, camera);
   };
@@ -803,6 +825,7 @@ export class GameScreen {
     if (renderPort.current === this.views) renderPort.current = null;
     this.views.dispose();
     this.hudOverlay.dispose();
+    this.fpsOverlay.dispose();
     this.groundField.dispose();
     this.shadows.dispose();
     this.cockpit.dispose();

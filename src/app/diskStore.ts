@@ -39,6 +39,32 @@ async function all(): Promise<Map<string, Uint8Array>> {
   });
 }
 
+/** @portOnly Export only the port's saves/configuration; never the game assets. */
+export async function exportSaveBackup(): Promise<string> {
+  const files: Record<string,string>={};
+  for(const [name,bytes] of await all()) {
+    let text='';for(const byte of bytes)text+=String.fromCharCode(byte);
+    files[name]=btoa(text);
+  }
+  return JSON.stringify({format:'mw2-quest-saves',version:1,created:new Date().toISOString(),files},null,2);
+}
+
+/** Replaces the own-file database atomically; the caller opens the game again afterwards. */
+export async function importSaveBackup(text: string): Promise<void> {
+  if(text.length>32*1024*1024)throw Error('Sicherung ist zu groß');
+  const data=JSON.parse(text) as {format:string;version:number;files:Record<string,string>};
+  if(data.format!=='mw2-quest-saves'||data.version!==1||!data.files||typeof data.files!=='object'||Array.isArray(data.files))throw Error('Keine MW2-Spielstandsicherung');
+  const files=new Map<string,ArrayBuffer>();
+  for(const [name,encoded] of Object.entries(data.files)) {
+    if(!/^[A-Z0-9_./-]+$/i.test(name)||name.includes('..')||typeof encoded!=='string')throw Error('Ungültiger Dateieintrag');
+    if(/\.(EXE|DLL|BIN|CUE|PRJ|MW2|SMK|SFL|SHP)$/i.test(name))throw Error('Spieldaten gehören nicht in eine Spielstandsicherung');
+    const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));files.set(name,bytes.buffer);
+  }
+  const d=await(db??=open()),tx=d.transaction(STORE,'readwrite'),s=tx.objectStore(STORE);
+  s.clear();for(const [name,bytes] of files)s.put(bytes,name);
+  await new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error??Error('Wiederherstellung abgebrochen'));});
+}
+
 async function put(key: string, bytes: Uint8Array | null): Promise<void> {
   const d = await (db ??= open());
   const tx = d.transaction(STORE, 'readwrite');

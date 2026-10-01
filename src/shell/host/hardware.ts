@@ -38,6 +38,8 @@ export const hardware = {
 
   // ---- the BIOS keyboard buffer getch reads: ASCII, or 0 then the scan code
   keys: [] as number[],
+  /** @portOnly active line editor, mirrored for the headset's virtual keyboard. */
+  textEntry: null as { text: string; maxChars: number } | null,
 
   // ---- the timer: milliseconds, advanced by the host
   timeMs: 0,

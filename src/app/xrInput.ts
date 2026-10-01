@@ -8,13 +8,15 @@
  *   left click      reverse direction (`)
  *   left trigger    cycle weapon (Enter)
  *   left grip       throttle stop (1)
- *   X / Y           cockpit / external view (c) / the main menu (Esc)
+ *   X / Y           jump jets (j) / the main menu (Esc)
  *   right stick     torso twist and pitch (the mouse; , . and the arrows' torso keys if there is none)
  *   right click     feet to torso (m)
  *   right trigger   fire the selected weapon (Space)
  *   right grip      fire the selected group (;)
  *   A / B           nearest enemy (e) / next target (t)
  *
+ * In mission menus: left stick navigates, A / right trigger confirms,
+ * B / Y goes back. A context change releases commands and waits for neutral.
  * Recentring the view is the headset's own (the 'local' reference space
  * follows the system's recentre).
  *
@@ -22,6 +24,7 @@
  */
 import { releaseSentKeys, sendKey, setMouseStick } from './hostInput.ts';
 import { IDLE_PAD, PadMapper, type PadState } from './xrPads.ts';
+import { ui } from '../sim/ui/uiContext.ts';
 
 /** The state of an XR session's controllers (xr-standard: axes 2 / 3 the stick, buttons 0 trigger, 1 grip, 3 stick click, 4 A / X, 5 B / Y). */
 export function readPads(session: XRSession): PadState {
@@ -60,11 +63,11 @@ export class XrInput {
   private readonly torsoKeys = new PadMapper();
 
   poll(session: XRSession, active: boolean): void {
-    if (!active) {
+    if (!active || session.visibilityState !== 'visible') {
       this.release();
       return;
     }
-    const { keys, torso } = this.mapper.update(readPads(session));
+    const { keys, torso } = this.mapper.update(readPads(session), ui.menuOpenCount > 0);
     for (const k of keys) sendKey(k.code, k.down);
     if (torso && !setMouseStick(torso[0], torso[1])) {
       const t = this.torsoKeys.update({ ...IDLE_PAD, lx: torso[0] });

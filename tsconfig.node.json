@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022"],
+    // Tests also exercise browser-host adapters with mocked XR/storage APIs.
+    // tsconfig.engine.json still independently enforces a DOM-free engine.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
   "include": ["tools", "test", "vite.config.ts", "vitest.config.ts"]

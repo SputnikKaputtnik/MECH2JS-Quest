@@ -3,3 +3,22 @@ dist/
 .env
 *.local
 test-results-*.txt
+
+# Private installations, local environment and diagnostic/export files.
+.env.*
+!.env.example
+game-data/
+private-data/
+*.cpuprofile
+*.BIN
+*.bin
+*.CUE
+*.cue
+*.EXE
+*.exe
+*.MW2
+*.mw2
+*.PRJ
+*.prj
+*.CFG
+*.cfg

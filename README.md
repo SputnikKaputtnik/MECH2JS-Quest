@@ -1,4 +1,12 @@
-# MechWarrior 2 - TypeScript port
+# MECH2JS Quest — standalone VR
+
+Quest 3 adaptation of [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS), based on its `vr-mode` branch. This fork adds offline headset installation, controller pointing and a virtual keyboard, VR comfort options, a cockpit FPS counter, configurable fixed foveation and resolution, and ongoing renderer optimization toward 90 FPS.
+
+**Experimental:** 90 Hz is a target, not a claim of sustained performance. Original game data must be supplied privately and are not included. The app currently runs through Quest Browser/WebXR; an APK launcher is not implemented.
+
+See [Quest setup, controls and measured status](QUEST-STANDALONE.md). The original project's documentation is preserved below.
+
+## Original project: MechWarrior 2 TypeScript port
 
 A faithful port of MechWarrior 2 (1995, DOS) to TypeScript, three.js and
 React, built from the decompilation in the `mw2-decompiled` repo (its

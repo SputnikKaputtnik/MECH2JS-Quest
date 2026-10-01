@@ -4,9 +4,8 @@
  * with the mouse pointer drawn over it; the pointer and keyboard fed to the
  * shell's int 33h mouse and BIOS keyboard. Each animation frame runs the
  * shell's pump. With a headset (app/xrHost.ts) the frames are its loop's and
- * the canvas is also its panel; there, where the page's pointer cannot be
- * seen, a click locks the mouse to the screen and its motion moves the
- * shell's.
+ * the canvas is also its panel; Quest controllers move and click the shell's
+ * cursor. DOM pointer events are ignored there to avoid duplicate clicks.
  *
  * @portOnly the monitor, mouse and keyboard of the shell's PC
  */
@@ -17,6 +16,8 @@ import { vfxShapeBounds, vfxShapeDraw, VfxWindow, vfxWindowAllocate } from '../.
 import { ViewWindow } from '../../generated/classes.gen.ts';
 import { biosKey } from './keymap.ts';
 import { everyFrame, type XrHost } from '../xrHost.ts';
+import { QuestShellInput } from './questShellInput.ts';
+import { resetShellInput } from './shellInputBoundary.ts';
 
 /** 6-bit DAC values to 8-bit (the VGA's 63 is full brightness). */
 const dac8 = (v: number) => (v << 2) | (v >> 4);
@@ -49,6 +50,7 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    resetShellInput();
     const cv = canvas.current!;
     const ctx = cv.getContext('2d')!;
     const img = ctx.createImageData(SCREEN_W, SCREEN_H);
@@ -59,6 +61,7 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
     let pointerFor: unknown = null;
     let last = performance.now();
     let ended = false;
+    const questInput = new QuestShellInput();
 
     const paint = () => {
       if (hardware.dacVersion !== dacSeen) {
@@ -100,6 +103,7 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
         }
       }
       ctx.putImageData(img, 0, 0);
+      if (host?.presenting) questInput.paint(ctx);
     };
 
     const tick = (now: number) => {
@@ -107,11 +111,15 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
       // the headset's frame times and the window's are one clock, but a frame can arrive stamped before the last
       const ms = Math.max(0, Math.min(100, now - last));
       last = now;
+      if (host) questInput.poll(host.renderer.xr.getSession(), ms, now, host.screenPointer);
       const running = pump.frame(ms);
+      if (host?.presenting) questInput.syncTextEntry();
       paint();
       if (!running) {
         ended = true;
         stop();
+        questInput.release();
+        resetShellInput();
         if (pump.error) console.error('[shell]', pump.error);
         onExit(pump.status ?? 1);
       }
@@ -141,14 +149,14 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
       hwMouseButtons((e.buttons & 1) | ((e.buttons & 2) ? 2 : 0) | ((e.buttons & 4) ? 4 : 0));
     };
     const onMove = (e: PointerEvent) => {
+      // XR gamepads own the virtual mouse while presenting. Browser-synthesized
+      // pointer events must not enqueue a second click for the same trigger.
+      if (ended || host?.presenting) return;
       toScreen(e);
       buttons(e);
     };
     const onDown = (e: PointerEvent) => {
-      // in the headset the page's pointer cannot be seen, so the first click locks the mouse to the
-      // screen (the shell draws its own pointer, on the headset's panel too)
-      if (host?.presenting && !locked()) {
-        void cv.requestPointerLock();
+      if (ended || host?.presenting) {
         e.preventDefault();
         return;
       }
@@ -158,6 +166,7 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
       e.preventDefault();
     };
     const onKey = (e: KeyboardEvent) => {
+      if (ended) return;
       const k = biosKey(e);
       if (k) {
         hwKey(k.ascii, k.scan);
@@ -172,6 +181,8 @@ export function ShellView({ pump, onExit, host }: { pump: ShellPump; onExit: (st
     window.addEventListener('keydown', onKey);
     return () => {
       stop();
+      questInput.release();
+      resetShellInput();
       host?.hideScreen(cv);
       // the next view (a mission) takes the mouse with a click of its own
       if (locked()) document.exitPointerLock();

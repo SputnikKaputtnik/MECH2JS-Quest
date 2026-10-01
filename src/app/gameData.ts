@@ -13,6 +13,7 @@
  * writing the controls files on a first run (shell/controls/seed.ts).
  */
 import { ExeImage } from '../data/exe/ExeImage.ts';
+import { assertExecutableCompatibility } from '../data/exe/compatibility.ts';
 import { IniFile } from '../data/config/ini.ts';
 import { ProjectFile, readNameTable, TABL } from '../data/prj/ProjectFile.ts';
 import type { InstallSource } from '../data/source/FileSource.ts';
@@ -64,6 +65,7 @@ export async function loadGameData(src: InstallSource, progress: (msg: string) =
   const exe = ExeImage.fromExe(await src.read('MW2.EXE'));
   progress('MW2SHELL.EXE');
   const shellExe = ExeImage.fromExe(await src.read('MW2SHELL.EXE'));
+  assertExecutableCompatibility(exe, shellExe);
   progress('MW2.INI');
   let ini = new IniFile(null);
   try {

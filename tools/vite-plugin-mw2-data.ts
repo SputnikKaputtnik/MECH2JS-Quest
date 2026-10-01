@@ -15,6 +15,7 @@ import path from 'node:path';
 import type { Connect, Plugin } from 'vite';
 import { mw2Decompiled, mw2Root, unsetMessage } from './paths.ts';
 import { INSTALL_WHITELIST } from '../src/data/source/installFiles.ts';
+import { questManifest } from './questManifest.ts';
 
 // The game's content only (src/data/source/installFiles.ts): never the
 // install's config, player or controls files - the port writes its own.
@@ -101,6 +102,14 @@ export function mw2Data(env: Record<string, string | undefined> = process.env): 
     res.end(unsetMessage(name));
   };
   const install = (mw: Connect.Server, withRef: boolean) => {
+    mw.use('/quest-install.json', (_req, res) => {
+      if (!root) { res.statusCode = 404; res.end('MW2_ROOT fehlt'); return; }
+      void questManifest(root).then(manifest => {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(JSON.stringify(manifest));
+      }).catch((error: unknown) => { res.statusCode = 500; res.end(String(error)); });
+    });
     mw.use('/mw2', root ? serveFrom(root, GAME_WHITELIST) : unset('MW2_ROOT'));
     if (withRef) mw.use('/mw2-ref', ref ? serveFrom(ref, REF_WHITELIST) : unset('MW2_DECOMPILED'));
   };

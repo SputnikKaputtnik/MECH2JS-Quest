@@ -55,12 +55,33 @@ export class ScreenRoom {
   private readonly grid: THREE.GridHelper;
   private texture: THREE.CanvasTexture<ScreenSource> | null = null;
   private source: ScreenSource | null = null;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly rayLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x80e8b0, depthTest: false }));
+
+  /** Right-controller ray in the same local space as the curved menu screen. */
+  pointAt(origin: THREE.Vector3 | null, direction?: THREE.Vector3): { x: number; y: number } | null {
+    this.rayLine.visible = false;
+    if (!origin || !direction || !this.source) return null;
+    this.panel.updateMatrixWorld(true);
+    this.raycaster.set(origin, direction);
+    const hit = this.raycaster.intersectObject(this.panel, false)[0];
+    if (!hit?.uv) return null;
+    const vertices = this.rayLine.geometry.getAttribute('position') as THREE.BufferAttribute;
+    vertices.setXYZ(0, origin.x, origin.y, origin.z);
+    vertices.setXYZ(1, hit.point.x, hit.point.y, hit.point.z);
+    vertices.needsUpdate = true;
+    this.rayLine.visible = true;
+    return { x: Math.min(639, Math.max(0, hit.uv.x * SCREEN_W)), y: Math.min(479, Math.max(0, (1 - hit.uv.y) * SCREEN_H)) };
+  }
 
   constructor() {
     this.scene.background = new THREE.Color(0x050608);
     this.panel = new THREE.Mesh(curvedPanel(), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     this.panel.visible = false;
     this.scene.add(this.panel);
+    this.rayLine.frustumCulled = false;
+    this.rayLine.visible = false;
+    this.scene.add(this.rayLine);
     // a floor to stand the room on: a dark void is hard to sit in
     this.grid = new THREE.GridHelper(40, 40, 0x2a2e36, 0x15181d);
     this.grid.position.y = -FLOOR_DROP;
@@ -94,5 +115,7 @@ export class ScreenRoom {
     this.panel.geometry.dispose();
     this.panel.material.dispose();
     this.grid.dispose();
+    this.rayLine.geometry.dispose();
+    this.rayLine.material.dispose();
   }
 }

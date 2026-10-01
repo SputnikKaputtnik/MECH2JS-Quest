@@ -15,6 +15,8 @@ import { serverInstall } from './fetchSource.ts';
 import { DroppedInstall } from './droppedInstall.ts';
 import { InstallDrop } from './InstallDrop.tsx';
 import type { InstallSource } from '../data/source/FileSource.ts';
+import { offlineInstall } from './questStorage.ts';
+import { QuestSetup } from './QuestSetup.tsx';
 
 /** The developer's route: the mission picker and the editor (?dev in the address). */
 const DEV = new URLSearchParams(window.location.search).has('dev');
@@ -48,7 +50,7 @@ installConsoleSinks();
   },
 };
 
-export function App() {
+function GameApp() {
   // where the install comes from: the dev server's (MW2_ROOT), or - with none - a folder the player drops
   const [install, setInstall] = useState<InstallSource | null>(null);
   const [asking, setAsking] = useState(false);
@@ -61,11 +63,11 @@ export function App() {
 
   useEffect(() => {
     let live = true;
-    void serverInstall().then((s) => {
+    void offlineInstall().then(s=>s??serverInstall()).then((s) => {
       if (!live) return;
       if (s) setInstall(s);
       else setAsking(true);
-    });
+    }).catch((error: unknown)=>{ if(live)setFailed(String(error)); });
     return () => {
       live = false;
     };
@@ -120,4 +122,8 @@ export function App() {
       />
     );
   return <EditorRoot game={game} onBack={() => setInMission(false)} />;
+}
+
+export function App() {
+  return new URLSearchParams(window.location.search).has('setup') ? <QuestSetup /> : <GameApp />;
 }
