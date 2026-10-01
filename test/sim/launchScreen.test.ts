@@ -11,6 +11,7 @@ import { launchAnimPath, launchAnimTick, launchScreen } from '../../src/sim/disp
 import { defaultCanvas } from '../../src/sim/display/video.ts';
 import { palettes } from '../../src/sim/world/palettes.ts';
 import { simTables } from '../../src/sim/effects/simTables.ts';
+import { LaunchPlayback } from '../../src/app/shell/launchPlayback.ts';
 import { openCd } from '../support/cdImage.ts';
 import { gameSource, hasCd, hasGameData, installFiles } from '../support/env.ts';
 
@@ -35,11 +36,20 @@ describe.runIf(hasGameData && hasCd)('launch screen', () => {
     const drawn = defaultCanvas.buffer.reduce((n, v) => n + (v ? 1 : 0), 0);
     expect(drawn).toBeGreaterThan(10000);
     expect(palettes.dac.some((v, i) => i >= 48 && v !== 0)).toBe(true);
+    const launchFrames = palettes.dacPlayback.slice();
+    const playback = new LaunchPlayback(palettes.dacPlayback);
+    expect(launchFrames.length).toBeGreaterThan(0);
+    expect(palettes.dacPlayback).toHaveLength(0);
+    expect(playback.at(0)).toBe(launchFrames[0]);
+    expect(playback.at(playback.durationMs + 1)).toBeNull();
     const before = launchScreen.frame;
     launchAnimTick();
     expect(launchScreen.frame).toBe((before + 1) % launchScreen.animationCount);
     expect((finish as () => boolean)()).toBe(true);
     expect(launchScreen.picture).toBeNull();
+    // The mission retains its own transition, but never replays the launch fade.
+    expect(palettes.dacPlayback.length).toBeGreaterThan(0);
+    expect(palettes.dacPlayback.some(frame => launchFrames.includes(frame))).toBe(false);
     // sim_count_mechs_by_status: someone is counted on each side of BLONSCN1
     const w = (a: number) => simTables.dat000a5630[a - 0xa5630]! | (simTables.dat000a5630[a - 0xa5630 + 1]! << 8);
     expect(w(0xa5668)).toBeGreaterThan(0);
