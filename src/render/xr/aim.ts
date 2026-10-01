@@ -36,6 +36,29 @@ const end = new THREE.Vector3();
 const ray = new Ray();
 const trial = new Ray();
 
+/** @portOnly Reuse an identical world query between simulation passes; head placement remains per-frame. */
+export class AimDepthMemo {
+  private revision = -1;
+  private readonly eye = new THREE.Matrix4();
+  private readonly projection = new THREE.Matrix4();
+  private readonly point = new THREE.Vector2();
+  private meshes: readonly THREE.Object3D[] = [];
+  private depth = 0;
+
+  sample(revision: number, eye: THREE.PerspectiveCamera, point: THREE.Vector2, meshes: readonly THREE.Object3D[], query: () => number): number {
+    if (this.revision !== revision || !this.eye.equals(eye.matrixWorld) || !this.projection.equals(eye.projectionMatrix) || !this.point.equals(point)
+      || meshes.length !== this.meshes.length || meshes.some((mesh, i) => mesh !== this.meshes[i])) {
+      this.depth = query();
+      this.revision = revision;
+      this.eye.copy(eye.matrixWorld);
+      this.projection.copy(eye.projectionMatrix);
+      this.point.copy(point);
+      this.meshes = meshes.slice();
+    }
+    return this.depth;
+  }
+}
+
 /**
  * The view depth (metres along `eye`'s forward axis) of the first surface on
  * the ray from `eye` through `ndc`, between minDepth and maxDepth; maxDepth

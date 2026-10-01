@@ -53,7 +53,7 @@ import { renderView } from '../render/pipeline/viewLatch.ts';
 import { farther, recallFaithful, recallViewSettings, type ViewSettings } from '../render/viewSettings.ts';
 import { XrRig, playerTargetPosition } from '../render/xr/xrRig.ts';
 import { XrSky } from '../render/xr/xrSky.ts';
-import { aimDepth } from '../render/xr/aim.ts';
+import { aimDepth, AimDepthMemo } from '../render/xr/aim.ts';
 import { recallXrSettings, XR_DEFAULTS, type XrSettings } from '../render/xr/xrSettings.ts';
 import { recallSpectatorSettings, Spectator, SPECTATOR_DEFAULTS, type SpectatorMode, type SpectatorSettings } from '../render/xr/spectator.ts';
 import { GroundField } from '../render/enhance/groundField.ts';
@@ -175,6 +175,9 @@ export class GameScreen {
   private last = performance.now();
   private readonly questPerf = new QuestPerf();
   private readonly fpsOverlay = new FpsOverlay();
+  private readonly aimMemo = new AimDepthMemo();
+  private aimRevision = 0;
+  private readonly aimPoint = new THREE.Vector2();
   private readonly questComfort = new QuestComfortMenu();
 
   private cockpitKey: string | null = null;
@@ -409,6 +412,7 @@ export class GameScreen {
     }
     // after the frame: the loop may have ended and left Edit. A headset always looks through the game's camera
     const outside = this.opts.lookThrough?.(dt, xr) ?? null;
+    if (passed || !playing || game.netBoot !== null) this.aimRevision++;
     const scene = outside !== null && !xr;
     const camera = scene ? outside.camera : gameCam;
     // the palette on screen follows the game's (day cycle, infrared, flashes) as well as the editor's choice
@@ -567,7 +571,7 @@ export class GameScreen {
       const world = (c: THREE.Camera) => {
         renderer.render(sr.backdropScene, c);
         renderer.clearDepth();
-        renderer.render(sr.scene, c);
+        sr.renderWorld(renderer, c);
       };
       if (xr) xrPass(world, true);
       else world(view);
@@ -706,12 +710,15 @@ export class GameScreen {
     const W = defaultCanvas.xMax + 1;
     const H = defaultCanvas.yMax + 1;
     if (!c || W <= 0 || H <= 0) return RETICLE_DISTANCE;
+    this.aimPoint.set((c.x / W) * 2 - 1, 1 - (c.y / H) * 2);
     const world = sr.pickables().filter((m) => rootOf3(m) === sr.scene);
-    const own = (m: THREE.Object3D) => {
-      const obj = sr.objectOf(m);
-      return !!obj?.node && mechOwning(obj.node) === mechs.playerMechIndex;
-    };
-    return aimDepth(this.gameCamera, new THREE.Vector2((c.x / W) * 2 - 1, 1 - (c.y / H) * 2), world, own, RETICLE_MIN_DISTANCE, RETICLE_DISTANCE);
+    return this.aimMemo.sample(this.aimRevision, this.gameCamera, this.aimPoint, world, () => {
+      const own = (m: THREE.Object3D) => {
+        const obj = sr.objectOf(m);
+        return !!obj?.node && mechOwning(obj.node) === mechs.playerMechIndex;
+      };
+      return aimDepth(this.gameCamera, this.aimPoint, world, own, RETICLE_MIN_DISTANCE, RETICLE_DISTANCE);
+    });
   }
 
   /**

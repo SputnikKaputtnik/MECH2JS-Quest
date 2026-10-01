@@ -30,13 +30,33 @@ The current target is **90 Hz**, requested when the runtime supports it, with a 
 
 The first measured optimization reuses unchanged HUD pixel uploads between simulation passes. Camera tracking, world rendering, HUD placement and targeting continue every display frame. Changing window dimensions or the source window forces a fresh upload; palette changes remain independent.
 
-Before this optimization, a 25-second Quest 3 sample at 72 Hz measured 70.9 XR callbacks/s, CPU mean 7.9 ms and p95 10.1 ms, with a combined 3360×1760 XR texture. Profiling identified repeated HUD packing as a significant CPU cost. This is one scene sample, not a general performance guarantee. GPU timing queries were unavailable on the tested browser; compositor FPS and GPU utilization have not been measured.
+Before this optimization, a 25-second Quest 3 sample at 72 Hz measured 70.9 XR callbacks/s, CPU mean 7.9 ms and p95 10.1 ms, with a combined 3360×1760 XR texture. Profiling identified repeated HUD packing as a significant CPU cost. This is one scene sample, not a general performance guarantee. WebGL GPU timer queries are unavailable on the tested browser, but native `ovrgpuprofiler` surface traces work.
+
+The opaque world now uses one indexed submission per material. Original model-space vertices and palette words are retained; a GPU matrix texture places each part, including moving mech parts. Indices omit CPU-rejected faces and unused clipping slots. Buffer updates copy only changed attributes, and expired object slots are reused for transient effects. Shadows, raycasts, outlines and order-dependent decals retain their original paths. The original CPU clipper, lighting rules and 20-Hz simulation are unchanged. The reticle also reuses an identical depth query until its world revision, camera, projection, reticle or visible mesh set changes.
+
+On Quest 3, four alternating 20-second reference/batch windows in one live mission measured the following (2026-10-01). Both paths used HUD reuse and reticle memoization, the same 90-Hz session, 2100×2200 per eye, 125% render scale and FFR 1. The simulation and head pose were not frozen, so this is a live comparison rather than a deterministic benchmark.
+
+| Metric | Reference world path | Batched world path |
+| --- | ---: | ---: |
+| XR callbacks/s | 84.6 | 88.7 |
+| CPU frame mean | 6.62 ms | 6.32 ms |
+| Whole-frame draw calls, mean | 314 | 137 |
+| Intervals over 1.5× frame budget, per 40 seconds | 357 | 231 |
+| Main GPU surface time, separate 1-second trace | 5.57 ms | 5.64 ms |
+
+The two GPU traces do **not** show a GPU-time improvement; they measure render-surface execution, not the whole frame or compositor. CPU p95 in the two batched windows was 12.0/11.6 ms, still above the 11.1-ms budget. Stable 90 FPS across missions is not established. Dynamic resolution is not yet implemented.
+
+For a live comparison, `window.mw2.view.renderer.batchWorld = false` selects the reference path; set it back to `true` after sampling. This changes submission only, without reloading or lowering resolution.
+
+A later optimization candidate is a coarse-grained C/C++ WebAssembly module for measured CPU bottlenecks, particularly fixed-point/64-bit geometry or collision work. This is an investigation direction, not a committed full-engine rewrite or a measured speedup. Keep the TypeScript implementation as the behavioral reference, batch data transfers across the JS/Wasm boundary, and establish a Quest benchmark before choosing a port. A native Android/OpenXR renderer would be a separate, larger project from a Wasm module within the current browser host.
 
 `window.mw2QuestPerf.reset()` starts a new sample. `snapshot()` reports callback frequency, CPU and simulation time, draw calls, triangles, actual XR layer dimensions, per-eye viewport sizes, granted refresh rate and fixed foveation. Stable 90 FPS at increased resolution still requires on-device verification across missions.
 
 ## Validation
 
 Engine, app and tool/test TypeScript checks, ESLint and the production/offline build are run locally. Targeted tests cover the real pilot registry, virtual keyboard, controller neutral/release behavior, shell return without stale-click relaunch, comfort options, HUD upload reuse, cockpit-relative FPS placement, graphics settings and offline worker activation.
+
+Batch tests cover visibility, clipped geometry/colour updates, moving parts, shadow-layer preservation, draw failure recovery, unchanged-buffer reuse and repeated effect replacement. The WebGL comparison at `/test/browser/worldBatch.html` (dev server only, separate browser context) renders reference and batched images of the same frozen mission state. In 15 AMY_SCN1 views at 640×480 it found 0–4 differing pixels per image and no shader errors; moving matrix multiplication to GPU floats can shift edge/dither pixels. One forward view fell from 133 world draw calls/2,479 submitted triangles to 2 calls/734 triangles. This does not replace testing other missions, close clipping, effects and stereo in the headset.
 
 Game-dependent tests require private compatible files. A previous full run passed 498 tests with one CD-image-specific golden failure: the image had a 300-sector gap where the reference expected 150. Neither image nor test was modified to conceal it. Tests requiring absent game files skip rather than establish compatibility.
 

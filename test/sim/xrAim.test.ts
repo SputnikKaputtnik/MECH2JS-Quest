@@ -3,7 +3,7 @@
 // stands on, the scenery where it is drawn, nothing straight ahead within
 // the cap - and the collision globals the game's queries write are left as
 // the sim had them.
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { ExeImage } from '../../src/data/exe/ExeImage.ts';
 import { ProjectFile } from '../../src/data/prj/ProjectFile.ts';
@@ -15,7 +15,7 @@ import { mechs } from '../../src/sim/mech/mechGlobals.ts';
 import { collision, worldGroundHeightNear } from '../../src/sim/world/collision.ts';
 import { SceneRenderer } from '../../src/render/SceneRenderer.ts';
 import { cameraFromViewer } from '../../src/render/bridge/cameraViewer.ts';
-import { aimDepth } from '../../src/render/xr/aim.ts';
+import { aimDepth, AimDepthMemo } from '../../src/render/xr/aim.ts';
 import { gameSource, hasGameData, installFiles } from '../support/env.ts';
 
 describe.runIf(hasGameData)('VR reticle depth', () => {
@@ -69,5 +69,23 @@ describe.runIf(hasGameData)('VR reticle depth', () => {
     depth(320, 470);
     depth(100, 400);
     expect(JSON.stringify({ ...collision })).toBe(before);
+  });
+
+  it('reuses the ray result only until the world, camera, projection or reticle changes', () => {
+    const memo = new AimDepthMemo();
+    const camera = cam.clone(); camera.updateMatrixWorld(true);
+    const ndc = new THREE.Vector2(0, 1 - 470 / 240);
+    const query = vi.fn(() => aimDepth(camera, ndc, meshes, () => false, 3, 300));
+    const first = memo.sample(1, camera, ndc, meshes, query);
+    for (let frame = 0; frame < 8; frame++) expect(memo.sample(1, camera, ndc, meshes, query)).toBe(first);
+    expect(query).toHaveBeenCalledTimes(1);
+    memo.sample(2, camera, ndc, meshes, query); // next simulation pass can move world geometry
+    camera.position.y += 1; camera.updateMatrixWorld(true);
+    expect(memo.sample(2, camera, ndc, meshes, query)).not.toBe(first);
+    ndc.x += 0.1; memo.sample(2, camera, ndc, meshes, query);
+    camera.fov *= 0.9; camera.updateProjectionMatrix(); memo.sample(2, camera, ndc, meshes, query);
+    expect(query).toHaveBeenCalledTimes(5);
+    memo.sample(2, camera, ndc, meshes.slice(1), query);
+    expect(query).toHaveBeenCalledTimes(6);
   });
 });

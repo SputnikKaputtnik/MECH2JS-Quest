@@ -100,6 +100,10 @@ import * as THREE from 'three';
 import { dac6to8 } from '../../data/formats/image.ts';
 
 export const vertexShader = /* glsl */ `
+#ifdef MW2_BATCHED
+in float aObject;
+uniform highp sampler2D uObjectMatrices;
+#endif
 in float aDraw;
 in vec2 aUv;
 in vec4 aSprite;        // mode 0x3000: xyz the sprite's point Q (model space), w its corner 0..3; w < 0 otherwise
@@ -113,8 +117,19 @@ out float vIdxW;   // vIdx * w: divided by the interpolated w, it is linear in s
 out vec3 vModel;   // the vertex in model space (world space for baked scenery), metres
 out vec3 vWorld;   // the vertex in world space, metres (the shadow enhancement)
 void main() {
+  mat4 objectModel = modelMatrix;
+  mat4 objectView = modelViewMatrix;
+  #ifdef MW2_BATCHED
+    int row = int(aObject + 0.5);
+    mat4 objectMatrix = mat4(texelFetch(uObjectMatrices, ivec2(0, row), 0),
+      texelFetch(uObjectMatrices, ivec2(1, row), 0),
+      texelFetch(uObjectMatrices, ivec2(2, row), 0),
+      texelFetch(uObjectMatrices, ivec2(3, row), 0));
+    objectModel = modelMatrix * objectMatrix;
+    objectView = modelViewMatrix * objectMatrix;
+  #endif
   vModel = position;
-  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+  vWorld = (objectModel * vec4(position, 1.0)).xyz;
   vDraw = aDraw < 0.0 ? -1 : int(aDraw + 0.5);
   float vIdx = 0.0;
   if (vDraw >= 0 && (vDraw & 0x7000) == 0x4000 && uMapFill != 0) {
@@ -125,7 +140,7 @@ void main() {
     // (u & 0xfff00000) + ((u & 0xf0000) * ((shade + 1) * 0x1000) >> 16), in index units
     vIdx = u < 0x300000 ? float(u) / 65536.0 : float(u >> 20) * 16.0 + float((u >> 16) & 15) * float(shade + 1) / 16.0;
   }
-  vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 clip = projectionMatrix * objectView * vec4(position, 1.0);
   // A sprite is a square made on the screen from its points' projections, so both must lie in front of the
   // eye: one behind it (w <= 0) turns the square inside out and it fills the view. The game's clipper drops
   // such sprites before they reach here (spriteVertices); what it never saw does not pass it - the scrounge
@@ -133,7 +148,7 @@ void main() {
   // the viewer the clipper culled for. Such a sprite is sent outside the clip volume, all four corners at once.
   const float SPRITE_NEAR = 0.05;
   if (aSprite.w >= 0.0 && uMapFill == 0) {
-    vec4 cq = projectionMatrix * modelViewMatrix * vec4(aSprite.xyz, 1.0);
+    vec4 cq = projectionMatrix * objectView * vec4(aSprite.xyz, 1.0);
     if (clip.w < SPRITE_NEAR || cq.w < SPRITE_NEAR) {
       vUvw = vec3(0.0);
       vIdxW = 0.0;
@@ -144,8 +159,8 @@ void main() {
   }
   if (aSprite.w >= 0.0 && uMapFill != 0) {
     // render_asm_sub_03b990, last argument 1: a square upright on the screen about Q, half the x distance from R to Q, at R's depth
-    vec4 cr = projectionMatrix * modelViewMatrix * vec4(aSpriteR, 1.0);
-    vec4 cq = projectionMatrix * modelViewMatrix * vec4(aSprite.xyz, 1.0);
+    vec4 cr = projectionMatrix * objectView * vec4(aSpriteR, 1.0);
+    vec4 cq = projectionMatrix * objectView * vec4(aSprite.xyz, 1.0);
     vec2 h = uViewport * 0.5;
     vec2 r = floor(vec2(cr.x, -cr.y) / cr.w * h);
     vec2 q = floor(vec2(cq.x, -cq.y) / cq.w * h);
@@ -155,7 +170,7 @@ void main() {
     clip = vec4(s.x / h.x * cr.w, -s.y / h.y * cr.w, cr.z, cr.w);
   } else if (aSprite.w >= 0.0) {
     // render_asm_sub_03b990: the square on P and Q in screen pixels (y down), at P's depth
-    vec4 cq = projectionMatrix * modelViewMatrix * vec4(aSprite.xyz, 1.0);
+    vec4 cq = projectionMatrix * objectView * vec4(aSprite.xyz, 1.0);
     vec2 h = uViewport * 0.5;
     vec2 p = vec2(clip.x, -clip.y) / clip.w * h;
     vec2 q = vec2(cq.x, -cq.y) / cq.w * h;

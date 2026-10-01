@@ -75,6 +75,7 @@ import { FillKind, polyFillDispatch, type PolyDraw } from './pipeline/fillDispat
 import { makeIndexedMaterial, makeLineMaterial, makeUniforms, NOT_DRAWN, setLuma, setPalette, type IndexedUniforms } from './materials/indexedMaterial.ts';
 import { isShadowCaster, SHADOW_LAYER } from './enhance/shadows.ts';
 import type { OwnChassisDraw } from './enhance/ownChassis.ts';
+import { WorldBatch } from './WorldBatch.ts';
 
 /** A polygon's outline slots: (vertex count + 1) segments, enough for a near-clipped shape. */
 export interface LineEntry {
@@ -139,6 +140,9 @@ export interface FrameStats {
 const pd: PolyDraw = { fill: NOT_DRAWN, kind: FillKind.ByMode, outline: NOT_DRAWN };
 
 export class SceneRenderer {
+  /** @portOnly Kept switchable for image/performance comparisons with the reference path. */
+  batchWorld = true;
+  private readonly worldBatch = new WorldBatch();
   readonly scene = new THREE.Scene();
   /** drawn first, and the depth buffer cleared after it: the sky pass and backdropNode's tree (see sync) */
   readonly backdropScene = new THREE.Scene();
@@ -223,8 +227,21 @@ export class SceneRenderer {
     return [...this.byMesh.keys()].filter((m) => m.visible && m.parent?.visible);
   }
 
+  /** @portOnly Batched opaque main-world pass; shadows and picking use original meshes. */
+  renderWorld(renderer: THREE.WebGLRenderer, camera: THREE.Camera): void {
+    const draw = () => renderer.render(this.scene, camera);
+    if (!this.batchWorld) { draw(); return; }
+    const sources: Array<THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>> = [];
+    for (const entry of this.entries.values()) {
+      if (entry.group.parent !== this.scene) continue;
+      for (const part of entry.meshes) sources.push(part.mesh as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>);
+    }
+    this.worldBatch.render(this.scene, sources, draw, camera.layers.mask);
+  }
+
   /** Forget every mesh (a new mission was loaded). */
   clear(): void {
+    this.worldBatch.dispose();
     for (const e of this.entries.values()) this.dispose(e);
     this.entries.clear();
     for (const e of this.cockpitEntries.values()) this.dispose(e);

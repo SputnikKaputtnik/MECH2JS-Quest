@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>MW2 world batching comparison</title>
+<h1>World batching image comparison</h1>
+<p>Development server and private MW2_ROOT required. Run in a separate browser context; this fixture starts its own mission and does not load player saves.</p>
+<button id="run">Compare reference and batched frames</button>
+<pre id="result"></pre>
+<script type="module">
+  import { runWorldBatchComparison } from './worldBatch.ts';
+  const button = document.querySelector('#run');
+  button.onclick = async () => {
+    button.disabled = true;
+    const result = document.querySelector('#result');
+    result.textContent = 'Running…';
+    try { result.textContent = JSON.stringify(await runWorldBatchComparison(), null, 2); }
+    catch (error) { result.textContent = String(error.stack ?? error); }
+    finally { button.disabled = false; }
+  };
+</script>
+</html>
