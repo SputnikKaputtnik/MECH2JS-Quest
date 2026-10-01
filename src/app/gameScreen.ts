@@ -656,7 +656,7 @@ export class GameScreen {
       } else renderer.render(hudOverlay.scene, hudOverlay.camera);
     }
     if (head && session?.visibilityState === 'visible' && cameraGlobals.cockpitViewActive !== 0 && fpsCounterEnabled()) {
-      this.fpsOverlay.update(this.questPerf.displayFps, rig.rig);
+      this.fpsOverlay.update(this.questPerf.displayFps, this.questPerf.missionFps, rig.rig);
       renderer.render(this.fpsOverlay.scene, rig.camera);
     }
     this.opts.afterFrame?.(now, camera);

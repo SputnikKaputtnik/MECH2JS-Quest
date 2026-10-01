@@ -22,7 +22,7 @@ After importing, the app and game data are stored locally. Keep the same origin 
 - Front end: point the right controller at the screen; right trigger clicks. Right stick can also move the cursor. Left stick sends arrow keys, left trigger Enter, B/Y Escape.
 - Profile entry: click an editable slot to show the virtual keyboard. Point + trigger types; left stick + A also works. DEL deletes, SPACE inserts a space, OK accepts. X opens/closes the keyboard manually; B/Y closes it.
 - Cockpit: left stick controls throttle/turn; right stick controls torso; right trigger fires; X jumps; Y opens the mission menu. The existing combat mapping is retained; sensitivity tuning is deferred.
-- **Y → VR Options:** FPS counter defaults ON. It is fixed to the lower-right cockpit and shows display callback frequency averaged over half a second. Ejection animation defaults OFF, with a nausea warning for enabling it. FFR defaults ON and can be toggled immediately. Render resolution offers 100–200%; changes apply on the next VR entry.
+- **Y → VR Options:** FPS counter defaults ON. It is fixed to the lower-right cockpit and shows display callback frequency averaged over half a second, beside the time-weighted mission average (`Ø`, one decimal). Each value is red below 60 FPS, yellow from 60 to below 89, green at 89 or above; colours use the unrounded value. Hidden/suspended headset intervals are excluded. A new mission resets the average; hiding the counter or resetting diagnostic logs does not. Ejection animation defaults OFF, with a nausea warning for enabling it. FFR defaults ON and can be toggled immediately. Render resolution offers 100–200%; changes apply on the next VR entry.
 
 ## Rendering status
 

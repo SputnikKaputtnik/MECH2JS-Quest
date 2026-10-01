@@ -23,3 +23,16 @@ it('weights uneven intervals by elapsed time and discards hidden or suspended pe
   rate.sample(5000, true);
   expect(rate.value).toBeNull();
 });
+
+it('accumulates a time-weighted mission rate across windows, excluding hidden intervals', () => {
+  const rate = new FrameRate();
+  for (let i = 0; i <= 90; i++) rate.sample(i * 1000 / 90, true);
+  expect(rate.missionAverage).toBeCloseTo(90);
+  rate.sample(1050, false);
+  for (let i = 0; i <= 120; i++) rate.sample(10000 + i * 1000 / 60, true);
+  expect(rate.missionAverage).toBeCloseTo(70); // 210 frames / 3 active seconds
+  rate.sample(20000, true); // a suspended callback gap is not an active interval
+  expect(rate.missionAverage).toBeCloseTo(70);
+  rate.reset();
+  expect(rate.missionAverage).toBeNull();
+});
