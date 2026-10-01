@@ -44,6 +44,12 @@ export class OverrideButton {
     this.lamp.color.setHex(active?0xffb43b:pressed?0xffde92:0x403016);
   }
   /** Face coordinates in metres, positive Z toward the pilot. */
+  contactMatrix(out: THREE.Matrix4): THREE.Matrix4 {
+    this.root.updateWorldMatrix(true,false);
+    out.copy(this.root.matrixWorld).invert();
+    out.elements[14]! -= 0.018;
+    return out;
+  }
   localTip(world: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
     this.root.updateWorldMatrix(true,false);
     out.copy(world);this.root.worldToLocal(out);out.z-=0.018;return out;

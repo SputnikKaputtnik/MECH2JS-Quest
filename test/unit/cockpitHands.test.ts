@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
+import { GloveContact } from '../../src/render/xr/gloveContact.ts';
 import { PhysicalPress } from '../../src/render/xr/physicalPress.ts';
 import { FacetedGlove } from '../../src/render/xr/facetedGlove.ts';
 import { RadarTouchSurface } from '../../src/render/cockpit/touchSurface.ts';
@@ -67,5 +68,33 @@ it('tracks either glove in the moving rig, activates the original callback, and 
     b.enabled=false;step(0.06);step(0);
     expect(press).toHaveBeenCalledTimes(2);
     hands.dispose();glove.dispose();b.dispose();
+  }
+});
+
+
+it('counts solid contact from every glove part, including palm, back and cuff, in either hand', () => {
+  const contact = new GloveContact();
+  const matrix = new THREE.Matrix4();
+  const target = {
+    action: 'radarRange' as const, enabled: true, width: 0.004, height: 0.004,
+    contactMatrix: (out: THREE.Matrix4) => out.copy(matrix),
+    localTip: (world: THREE.Vector3, out: THREE.Vector3) => out.copy(world).applyMatrix4(matrix),
+    setState: () => {},
+  };
+  for (const side of ['left', 'right'] as const) {
+    const glove = new FacetedGlove(side);
+    glove.root.position.set(2, 3, -4);
+    glove.root.rotation.set(0.3, -0.7, 0.2);
+    glove.root.updateMatrixWorld(true);
+    for (const part of glove.root.children) {
+      // Isolate each piece so another finger cannot mask a missing collider.
+      for (const candidate of glove.root.children) candidate.visible = candidate === part;
+      const centre = part.getWorldPosition(new THREE.Vector3());
+      matrix.makeTranslation(-centre.x, -centre.y, -centre.z);
+      expect(contact.intersects(glove.root, target)).toBe(true);
+      matrix.makeTranslation(-centre.x + 0.5, -centre.y, -centre.z);
+      expect(contact.intersects(glove.root, target)).toBe(false);
+    }
+    glove.dispose();
   }
 });

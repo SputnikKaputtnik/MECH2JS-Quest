@@ -32,19 +32,19 @@ export class FacetedGlove {
       mesh.position.copy(start).add(end).multiplyScalar(0.5);
       mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),end.sub(start).normalize());this.root.add(mesh);
     };
-    lump([0,0,0.038],[0.041,0.030,0.030],0x3b4148); // cuff
-    lump([0,0,-0.026],[0.047,0.031,0.065],0x747d84); // palm
-    lump([0,0.024,-0.028],[0.039,0.012,0.041],0x929b9c); // back plate
-    finger([-0.026,0.014,-0.063],[-0.026,0.015,-0.12],0.012,0x889192);
-    finger([-0.026,0.015,-0.12],[-0.026,0.015,-0.17],0.0095,0x9aa1a0);
-    lump([-0.026,0.015,-0.17],[0.009,0.009,0.009],0x9aa1a0);
+    lump([0,0,0.038],[0.041,0.030,0.030],0x493021); // cuff
+    lump([0,0,-0.026],[0.047,0.031,0.065],0x916039); // palm
+    lump([0,0.024,-0.028],[0.039,0.012,0.041],0xad7b4d); // back plate
+    finger([-0.026,0.014,-0.063],[-0.026,0.015,-0.12],0.012,0xa16f43);
+    finger([-0.026,0.015,-0.12],[-0.026,0.015,-0.17],0.0095,0xb78553);
+    lump([-0.026,0.015,-0.17],[0.009,0.009,0.009],0xb78553);
     for(let i=0;i<3;i++) {
       const x=-0.003+i*0.022;
-      finger([x,0.006,-0.055],[x,-0.024,-0.083],0.011,0x747d84);
-      finger([x,-0.024,-0.083],[x,-0.037,-0.045],0.01,0x59636b);
+      finger([x,0.006,-0.055],[x,-0.024,-0.083],0.011,0x916039);
+      finger([x,-0.024,-0.083],[x,-0.037,-0.045],0.01,0x70482d);
     }
-    finger([-0.037,-0.005,0],[-0.054,-0.021,-0.027],0.014,0x747d84);
-    finger([-0.054,-0.021,-0.027],[-0.036,-0.034,-0.049],0.012,0x899292);
+    finger([-0.037,-0.005,0],[-0.054,-0.021,-0.027],0.014,0x916039);
+    finger([-0.054,-0.021,-0.027],[-0.036,-0.034,-0.049],0.012,0xa57448);
     // Roll each hand outward, then pitch forward about the controller's X axis.
     // Keep this correction below root: tracking replaces root.matrix every frame.
     const alignment = new THREE.Matrix4().makeRotationX(-Math.PI/4)

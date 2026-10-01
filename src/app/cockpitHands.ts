@@ -1,14 +1,13 @@
 /** @portOnly Controller grips become tracked pointing gloves for physical cockpit controls. */
 import * as THREE from 'three';
 import { FacetedGlove } from '../render/xr/facetedGlove.ts';
-import { PhysicalPress } from '../render/xr/physicalPress.ts';
+import { GloveContact } from '../render/xr/gloveContact.ts';
 import type { CockpitTouchTarget, CockpitAction } from '../render/cockpit/touchSurface.ts';
 export class CockpitHands {
   readonly scene = new THREE.Scene();
-  private readonly hands = (['left','right'] as const).map(side=>({side,glove:new FacetedGlove(side),press:new Map<CockpitTouchTarget,PhysicalPress>(),source:null as XRInputSource|null}));
+  private readonly hands = (['left','right'] as const).map(side=>({side,glove:new FacetedGlove(side),ready:new Set<CockpitTouchTarget>(),source:null as XRInputSource|null}));
   private readonly poseMatrix = new THREE.Matrix4();
-  private readonly tip = new THREE.Vector3();
-  private readonly local = new THREE.Vector3();
+  private readonly contact = new GloveContact();
   private last = 0;
   private held = new Set<CockpitTouchTarget>();
   constructor() { for(const h of this.hands){h.glove.root.matrixAutoUpdate=false;this.scene.add(h.glove.root);} }
@@ -23,23 +22,22 @@ export class CockpitHands {
     const triggered=new Map<CockpitTouchTarget,XRInputSource>();
     for(const h of this.hands){
       const source=Array.from(session.inputSources).find(s=>s.handedness===h.side)??null;
-      if(source!==h.source){h.press.clear();h.glove.root.visible=false;h.source=source;}
+      if(source!==h.source){h.ready.clear();h.glove.root.visible=false;h.source=source;}
       const grip=source?.gamepad?.buttons[1]?.value??0;
       const held=grip>(h.glove.root.visible?0.4:0.6);
       const pose=held&&source?.gripSpace?frame.getPose(source.gripSpace,reference):null;
       h.glove.root.visible=!!pose&&!pose.emulatedPosition;
-      if(!h.glove.root.visible || !pose){h.press.clear();continue;}
+      if(!h.glove.root.visible || !pose){h.ready.clear();continue;}
       this.poseMatrix.fromArray(pose.transform.matrix);
       h.glove.root.matrix.multiplyMatrices(rig.matrixWorld,this.poseMatrix);
       h.glove.root.matrixWorldNeedsUpdate=true;h.glove.root.updateMatrixWorld(true);
-      this.tip.copy(h.glove.tip).applyMatrix4(h.glove.root.matrixWorld);
-      for(const target of h.press.keys())if(!targets.includes(target)||!target.enabled)h.press.delete(target);
+      for(const target of h.ready)if(!targets.includes(target)||!target.enabled)h.ready.delete(target);
       for(const target of targets){
         if(!target.enabled)continue;
-        let contact=h.press.get(target);
-        if(!contact){contact=new PhysicalPress();h.press.set(target,contact);}
-        if(contact.update(target.localTip(this.tip,this.local),target.width,target.height)&&source)triggered.set(target,source);
-        if(contact.pressed)pressed.add(target);
+        if(this.contact.intersects(h.glove.root,target,this.held.has(target))){
+          pressed.add(target);
+          if(h.ready.delete(target)&&source)triggered.set(target,source);
+        } else h.ready.add(target);
       }
     }
     for(const [target,source] of triggered)if(!this.held.has(target)){
@@ -52,7 +50,7 @@ export class CockpitHands {
   }
   reset(): void {
     this.held.clear();
-    for(const h of this.hands){h.press.clear();h.glove.root.visible=false;h.source=null;}
+    for(const h of this.hands){h.ready.clear();h.glove.root.visible=false;h.source=null;}
   }
   dispose(): void { for(const h of this.hands)h.glove.dispose(); }
 }

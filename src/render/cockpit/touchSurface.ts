@@ -7,6 +7,7 @@ export interface CockpitTouchTarget {
   readonly width: number;
   readonly height: number;
   enabled: boolean;
+  contactMatrix(out: THREE.Matrix4): THREE.Matrix4;
   localTip(world: THREE.Vector3, out: THREE.Vector3): THREE.Vector3;
   setState(pressed: boolean, active: boolean): void;
 }
@@ -30,6 +31,10 @@ export class RadarTouchSurface implements CockpitTouchTarget {
   }
   localTip(world: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
     this.root.updateWorldMatrix(true,false);return this.root.worldToLocal(out.copy(world));
+  }
+  contactMatrix(out: THREE.Matrix4): THREE.Matrix4 {
+    this.root.updateWorldMatrix(true,false);
+    return out.copy(this.root.matrixWorld).invert();
   }
   setState(pressed: boolean): void {this.outline.visible=pressed;}
   dispose(): void {this.root.removeFromParent();this.outline.geometry.dispose();(this.outline.material as THREE.Material).dispose();}
