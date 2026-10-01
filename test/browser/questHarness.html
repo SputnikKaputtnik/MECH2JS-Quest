@@ -17,6 +17,8 @@
     const world = await runWorldBatchComparison();
     status.textContent = 'Comparing Wasm polygon images…';
     const wasmWorld = await runWorldBatchComparison('wasm');
+    status.textContent = 'Comparing scrounge batch images and submission costs…';
+    const scrounge = await runWorldBatchComparison('scrounge');
     status.textContent = 'Running HUD comparison…';
     const hud = runHudCropComparison();
     await loadHudKernel();
@@ -25,10 +27,11 @@
     const lighting = await runLightingBenchmark();
     status.textContent = 'Checking mission resource cleanup…';
     const resources = await runResourceLifetimeCheck();
+    const scroungeResources = await runResourceLifetimeCheck(true, true);
     const result = {
       kind: 'offscreen-image-regression', xr: false,
       userAgent: navigator.userAgent, visibility: document.visibilityState,
-      world, wasmWorld, hud, wasmHud, lighting, resources,
+      world, wasmWorld, scrounge, hud, wasmHud, lighting, resources, scroungeResources,
       note: 'Executed on device; no XR/compositor FPS or thermal-performance claim.'
     };
     status.textContent = JSON.stringify(result, null, 2);

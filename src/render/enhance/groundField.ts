@@ -41,6 +41,7 @@ import { renderOptions } from '../../sim/display/renderState.ts';
 import { CM_TO_UNITS } from '../bridge/space.ts';
 import { makeIndexedMaterial, NOT_DRAWN, type IndexedUniforms } from '../materials/indexedMaterial.ts';
 import type { MeshEntry, SceneRenderer } from '../SceneRenderer.ts';
+import { ScroungeBatch } from './scroungeBatch.ts';
 
 /** grid cell, metres, and cells across */
 const CELL = 16;
@@ -166,6 +167,9 @@ export function copyDrawWords(
 }
 
 export class GroundField {
+  /** @portOnly Experimental: fewer submissions have not established an XR rate gain. */
+  batchCopies = false;
+  private readonly batch = new ScroungeBatch();
   /** the grid, for the backdrop scene */
   readonly grid: THREE.Mesh;
   /** the scrounge copies, for the world scene */
@@ -292,6 +296,13 @@ export class GroundField {
         }
       }
     }
+    if (this.batchCopies) {
+      const sources: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>[] = [];
+      for (const c of this.copies.values()) for (const g of c.offsets) {
+        for (const child of g.children) sources.push(child as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>);
+      }
+      this.batch.update(this.field, sources);
+    } else this.batch.hide();
   }
 
   /** One of the patch's meshes, as built, shared by every copy. */
@@ -324,6 +335,7 @@ export class GroundField {
 
   /** A new mission: forget the copies (the patch's meshes are rebuilt). */
   clear(): void {
+    this.batch.dispose();
     for (const [obj, c] of [...this.copies]) this.forget(obj, c);
     this.cellX = this.cellZ = Number.NaN;
   }

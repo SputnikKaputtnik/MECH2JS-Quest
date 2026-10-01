@@ -1,6 +1,6 @@
 /** @portOnly Recreate mission views on one persistent renderer, like the XR host. */
 import * as THREE from 'three';
-import { GameScreen } from '../../src/app/gameScreen.ts';
+import { GameScreen, ORIGINAL_SETTINGS } from '../../src/app/gameScreen.ts';
 import type { XrHost } from '../../src/app/xrHost.ts';
 import { loadGameData } from '../../src/app/gameData.ts';
 import { FetchSource } from '../../src/app/fetchSource.ts';
@@ -8,11 +8,11 @@ import { Game } from '../../src/app/Game.ts';
 import { seedControlFiles } from '../../src/shell/controls/seed.ts';
 import { setDosFiles } from '../../src/engine/dosFiles.ts';
 
-export async function runResourceLifetimeCheck(assertStable = true) {
+export async function runResourceLifetimeCheck(assertStable = true, batchScrounge = false) {
   const data = await loadGameData(new FetchSource());
   setDosFiles(data.loose); seedControlFiles(data.shellExe);
   const game = new Game(data);
-  if (!game.loadMission('AMY_SCN1', { pilot: { name: 'RESOURCE TEST', mech: { config: 'mdg00std', mekId: 62, stream: { id: 29, name: 'maddog' }, tons: 60 } }, starmates: [] })) throw Error(game.loadError ?? 'Mission failed');
+  if (!game.loadMission(batchScrounge ? 'GOATSCN1' : 'AMY_SCN1', { pilot: { name: 'RESOURCE TEST', mech: { config: 'mdg00std', mekId: 62, stream: { id: 29, name: 'maddog' }, tons: 60 } }, starmates: [] })) throw Error(game.loadError ?? 'Mission failed');
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setSize(640, 480);
   let present: ((now: number) => void) | null = null;
@@ -24,11 +24,13 @@ export async function runResourceLifetimeCheck(assertStable = true) {
   const rows = [];
   try {
     for (let cycle = 0; cycle < 6; cycle++) {
-      const screen = new GameScreen(element, game, { host });
+      const screen = new GameScreen(element, game, { host, settings: () => ({ ...ORIGINAL_SETTINGS, enhance: { ...ORIGINAL_SETTINGS.enhance, ground: batchScrounge } }) });
+      screen.groundField.batchCopies = batchScrounge;
       try {
         game.setMode('play'); game.audio.pause();
         const start = performance.now();
         for (let frame = 0; frame < 12; frame++) present!(start + frame * 50);
+        if (batchScrounge && !screen.groundField.field.children.some(c => (c as THREE.InstancedMesh).isInstancedMesh)) throw Error('Resource test did not allocate the scrounge batch');
         // Allocate both sky geometries even without an immersive test session.
         screen.sr.backdropScene.traverse(o => { if (o instanceof THREE.Mesh) o.visible = true; });
         renderer.render(screen.sr.backdropScene, screen.gameCamera);

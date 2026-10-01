@@ -100,7 +100,7 @@ import * as THREE from 'three';
 import { dac6to8 } from '../../data/formats/image.ts';
 
 export const vertexShader = /* glsl */ `
-#ifdef MW2_BATCHED
+#if defined(MW2_BATCHED) || defined(USE_INSTANCING)
 in float aObject;
 uniform highp sampler2D uObjectMatrices;
 #endif
@@ -119,7 +119,7 @@ out vec3 vWorld;   // the vertex in world space, metres (the shadow enhancement)
 void main() {
   mat4 objectModel = modelMatrix;
   mat4 objectView = modelViewMatrix;
-  #ifdef MW2_BATCHED
+  #if defined(MW2_BATCHED) || defined(USE_INSTANCING)
     int row = int(aObject + 0.5);
     mat4 objectMatrix = mat4(texelFetch(uObjectMatrices, ivec2(0, row), 0),
       texelFetch(uObjectMatrices, ivec2(1, row), 0),

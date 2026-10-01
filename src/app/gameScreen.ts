@@ -184,7 +184,7 @@ export class GameScreen {
   private cockpitRampsOf: string | null = null;
   private hullRamps: number[] = [];
   private readonly lampColours = { red: 0, amber: 0, green: 0, blank: 0 };
-  private readonly groundField: GroundField;
+  readonly groundField: GroundField;
   private readonly shadows = new Shadows();
   private readonly ownChassis = new OwnChassis();
   private skyChoice: SkyChoice | null = null;
