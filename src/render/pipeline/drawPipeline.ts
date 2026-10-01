@@ -23,7 +23,7 @@
  */
 import { cameraGlobals } from '../../sim/camera/viewer.ts';
 import type { MeshBlock, MeshPolygon, MeshVertex, WorldObject } from '../../generated/classes.gen.ts';
-import { Acc64, imul64, regHi, regLo } from '../../core/int/i64.ts';
+import { Acc64, dot3Negative, imul64, regHi, regLo } from '../../core/int/i64.ts';
 import { renderView } from './viewLatch.ts';
 import { radar } from '../../sim/cockpit/radar.ts';
 import { mechs } from '../../sim/mech/mechGlobals.ts';
@@ -281,12 +281,9 @@ export function polyDepthKey(poly: MeshPolygon, vertices: MeshVertex[]): number 
   const n = poly.vertexCount;
   if (n >= 3) {
     const f = vertices[idx[0]!]!;
-    acc
-      .clear()
-      .mulAdd((f.worldX - r.viewTranslationX) | 0, poly.normalX)
-      .mulAdd((f.worldY - r.viewTranslationY) | 0, poly.normalY)
-      .mulAdd((f.worldZ - r.viewTranslationZ) | 0, poly.normalZ);
-    if (acc.h >= 0) return null; // jl on the 64-bit sum: only a negative sum is drawn
+    if (!dot3Negative((f.worldX - r.viewTranslationX) | 0, poly.normalX,
+      (f.worldY - r.viewTranslationY) | 0, poly.normalY,
+      (f.worldZ - r.viewTranslationZ) | 0, poly.normalZ)) return null; // jl on the wrapped 64-bit sum
   }
   let all = 3;
   for (let i = 0; i < n; i++) {

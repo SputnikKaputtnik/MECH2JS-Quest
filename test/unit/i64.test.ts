@@ -3,7 +3,7 @@
 // shows up as a mech drifting a centimetre per minute.
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { Acc64, det2r29, dot3r29, imul64, mulHi, mulr29, mulShr, regHi, regLo, udivShl, umul64 } from '../../src/core/int/i64.ts';
+import { Acc64, det2r29, dot3Negative, dot3r29, imul64, mulHi, mulr29, mulShr, regHi, regLo, udivShl, umul64 } from '../../src/core/int/i64.ts';
 
 const i32 = fc.integer({ min: -0x80000000, max: 0x7fffffff });
 const u32 = fc.integer({ min: 0, max: 0xffffffff });
@@ -19,6 +19,18 @@ const oracleShr29r = (v: bigint): number => {
 };
 
 describe('i64', () => {
+  it('dot-product sign preserves cancellation, zero and int64 overflow', () => {
+    const check = (a: number, b: number, c: number, d: number, e: number, f: number) => {
+      const sum = BigInt(a) * BigInt(b) + BigInt(c) * BigInt(d) + BigInt(e) * BigInt(f);
+      expect(dot3Negative(a, b, c, d, e, f)).toBe(BigInt.asIntN(64, sum) < 0n);
+    };
+    const small = fc.integer({ min: -1000000, max: 1000000 });
+    fc.assert(fc.property(int, int, int, int, int, int, check), { numRuns: 25000, seed: 31790 });
+    fc.assert(fc.property(small, small, small, small, small, small, check), { numRuns: 25000, seed: 31791 });
+    for (const residual of [-1, 0, 1]) check(0x7fffffff, 0x7fffffff, -0x7fffffff, 0x7fffffff, residual, 1);
+    check(-0x80000000, -0x80000000, -0x80000000, -0x80000000, 0, 0);
+    check(0x4000000, 0x8000000, 0x4000000, 0x8000000, -1, 1);
+  });
   it('imul64 matches BigInt', () => {
     fc.assert(
       fc.property(int, int, (a, b) => {

@@ -11,6 +11,8 @@ import { setDosFiles } from '../../src/engine/dosFiles.ts';
 import { objectsOnList, worldRootNode } from '../../src/engine/scene/objectLists.ts';
 import { latchLight, polyLightIntensity } from '../../src/render/shading/polygonColour.ts';
 import { referencePolyLight } from '../reference/polyLight.ts';
+import { renderView } from '../../src/render/pipeline/viewLatch.ts';
+import { runCullBenchmark, type CullInput } from './cullBenchmark.ts';
 
 export async function runLightingBenchmark() {
   const data = await loadGameData(new FetchSource());
@@ -48,6 +50,12 @@ export async function runLightingBenchmark() {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     const mean = (key: keyof typeof rounds[number]) => rounds.reduce((sum, r) => sum + r[key], 0) / rounds.length;
-    return { kind: 'isolated-lighting-cpu', polygons: polygons.length, repeats, light, rounds, referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0, note: 'Milliseconds per complete polygon set, not per XR frame. Off-head power state can affect absolute timings.' };
+    const culling = await runCullBenchmark(polygons.filter(({ poly }) => poly.vertexCount >= 3).map(({ poly, vertices }): CullInput => {
+      const v = vertices[poly.indices[0]!]!;
+      return [(v.worldX - renderView.viewTranslationX) | 0, poly.normalX,
+        (v.worldY - renderView.viewTranslationY) | 0, poly.normalY,
+        (v.worldZ - renderView.viewTranslationZ) | 0, poly.normalZ];
+    }));
+    return { kind: 'isolated-lighting-cpu', polygons: polygons.length, repeats, light, rounds, culling, referenceMs: mean('referenceMs'), optimizedMs: mean('optimizedMs'), mismatches: 0, note: 'Milliseconds per complete polygon set, not per XR frame. Off-head power state can affect absolute timings.' };
   } finally { sr.destroy(); game.audio.pause(); }
 }

@@ -128,6 +128,15 @@ export function mulr29(a: number, b: number): number {
 
 const dotAcc = new Acc64();
 
+/** @portOnly Exact sign of the wrapped int64 dot product used by back-face culling. */
+export function dot3Negative(a0: number, b0: number, a1: number, b1: number, a2: number, b2: number): boolean {
+  a0 |= 0; b0 |= 0; a1 |= 0; b1 |= 0; a2 |= 0; b2 |= 0;
+  const p0 = a0 * b0, p1 = a1 * b1, p2 = a2 * b2;
+  // Bound every partial sum as well as each product, including cancellation.
+  if (Math.abs(p0) + Math.abs(p1) + Math.abs(p2) <= Number.MAX_SAFE_INTEGER) return p0 + p1 + p2 < 0;
+  return dotAcc.clear().mulAdd(a0, b0).mulAdd(a1, b1).mulAdd(a2, b2).h < 0;
+}
+
 /** Signed dot product of three pairs, >> 29 rounded: every row of transform_point / matrix_multiply. */
 export function dot3r29(a0: number, b0: number, a1: number, b1: number, a2: number, b2: number): number {
   // Addition mod 2^64 is associative, so the original's summation order
