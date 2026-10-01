@@ -21,7 +21,7 @@ export function GameView({ game, host }: { game: Game; host?: XrHost | null }) {
     const screen = new GameScreen(el.current!, game, { settings: () => settings, host: host ?? undefined });
     // debug handle: window.mw2.view.gameCamera / .renderer / .views
     const dbg = (window as unknown as { mw2?: Record<string, unknown> }).mw2;
-    if (dbg) dbg.view = { gameCamera: screen.gameCamera, renderer: screen.sr, views: screen.views };
+    if (dbg) dbg.view = { gameCamera: screen.gameCamera, renderer: screen.sr, views: screen.views, hudOverlay: screen.hudOverlay };
     return () => screen.dispose();
   }, [game, game.mission, host]);
   return <div className="game-view" ref={el} />;

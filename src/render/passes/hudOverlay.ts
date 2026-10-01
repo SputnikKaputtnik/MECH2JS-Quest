@@ -121,10 +121,11 @@ void main() {
 `;
 
 const worldVertexShader = /* glsl */ `
+uniform vec4 uBounds; // UV rectangle; crop geometry and UVs together, retaining the original projection
 out vec2 vUv;
 void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vUv = mix(uBounds.xy, uBounds.zw, uv);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(vUv - 0.5, position.z, 1.0);
 }
 `;
 
@@ -197,6 +198,29 @@ export class HudOverlay {
   }
   private readonly reticleAt = new THREE.Vector2();
   private reticleCount = 0;
+  private crop = true;
+  private readonly reticleBounds = new THREE.Vector4();
+  private readonly markerBounds = new THREE.Vector4();
+
+  /** @portOnly A/B switch: preserve the original full-plane path without changing pixels or depth. */
+  get cropWorldLayers(): boolean { return this.crop; }
+  set cropWorldLayers(value: boolean) { this.crop = value; this.applyLayerBounds(); }
+
+  /** Fraction of each original plane covered by its padded content rectangle. */
+  get layerCoverage(): { reticle: number; marker: number } {
+    const area = (b: THREE.Vector4) => Math.max(0, b.z - b.x) * Math.max(0, b.w - b.y);
+    return { reticle: area(this.reticleBounds), marker: area(this.markerBounds) };
+  }
+
+  private applyLayerBounds(): void {
+    for (const [mesh, bounds] of [[this.reticleMesh, this.reticleBounds], [this.markerMesh, this.markerBounds]] as const) {
+      const uniform = (mesh.material as THREE.ShaderMaterial).uniforms.uBounds!.value as THREE.Vector4;
+      if (this.crop) uniform.copy(bounds);
+      else uniform.set(0, 0, 1, 1);
+      // Callers control visibility for gameplay; an empty layer submits no triangles.
+      mesh.geometry.setDrawRange(0, this.crop && (bounds.z <= bounds.x || bounds.w <= bounds.y) ? 0 : 6);
+    }
+  }
 
   /** Which HUD layers worldMesh draws (bit n: layer n) - the ones not drawn apart this frame. */
   setWorldLayers(mask: number): void {
@@ -227,7 +251,7 @@ export class HudOverlay {
   }
 
   private worldPlane(layers: number): THREE.Mesh {
-    const uniforms = { ...this.u, uLayers: { value: layers }, ...excludeUniforms() };
+    const uniforms = { ...this.u, uLayers: { value: layers }, uBounds: { value: new THREE.Vector4(0, 0, 1, 1) }, ...excludeUniforms() };
     const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms, vertexShader: worldVertexShader, fragmentShader: worldFragmentShader, depthTest: false, depthWrite: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     mesh.frustumCulled = false;
@@ -267,19 +291,38 @@ export class HudOverlay {
     let rx = 0;
     let ry = 0;
     let rn = 0;
+    let rLeft = w, rTop = h, rRight = -1, rBottom = -1;
+    let mLeft = w, mTop = h, mRight = -1, mBottom = -1;
     // drawn: 255 - its layer (every drawn pixel stays >= 0.5 for the screen pass); not drawn: 0; then the inset mark
     for (let i = 0, n = w * h; i < n; i++) {
       d[i * 4] = b[i]!;
       d[i * 4 + 1] = m[i] ? 255 - l[i]! : 0;
       d[i * 4 + 2] = k[i] ?? 0;
       if (m[i] && l[i] === reticle) {
-        rx += i % w;
-        ry += (i / w) | 0;
+        const x = i % w, y = (i / w) | 0;
+        rx += x;
+        ry += y;
         rn++;
+        rLeft = Math.min(rLeft, x); rTop = Math.min(rTop, y);
+        rRight = Math.max(rRight, x); rBottom = Math.max(rBottom, y);
+      } else if (m[i] && l[i] === HUD_LAYER.targetMarker) {
+        const x = i % w, y = (i / w) | 0;
+        mLeft = Math.min(mLeft, x); mTop = Math.min(mTop, y);
+        mRight = Math.max(mRight, x); mBottom = Math.max(mBottom, y);
       }
     }
     this.reticleCount = rn;
     if (rn > 0) this.reticleAt.set(rx / rn + 0.5, ry / rn + 0.5);
+    // One source-pixel guard around inclusive bounds avoids cutting border
+    // fragments through floating-point rounding. Window row zero is the top.
+    const bounds = (out: THREE.Vector4, left: number, top: number, right: number, bottom: number) => {
+      if (right < left || bottom < top) { out.set(0, 0, 0, 0); return; }
+      out.set(Math.max(0, left - 1) / w, 1 - Math.min(h, bottom + 2) / h,
+        Math.min(w, right + 2) / w, 1 - Math.max(0, top - 1) / h);
+    };
+    bounds(this.reticleBounds, rLeft, rTop, rRight, rBottom);
+    bounds(this.markerBounds, mLeft, mTop, mRight, mBottom);
+    this.applyLayerBounds();
     this.tex.needsUpdate = true;
     this.uploadedWindow = win;
     return true;

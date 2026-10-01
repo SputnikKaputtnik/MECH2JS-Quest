@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>MW2 HUD crop comparison</title>
+<h1>HUD crop image comparison</h1>
+<p>Development server only. Compares full and cropped HUD planes in both eyes, at different angles, with edge markers and empty layers. No game data required.</p>
+<button id="run">Compare HUD frames</button>
+<pre id="result"></pre>
+<script type="module">
+  import { runHudCropComparison } from './hudCrop.ts';
+  const button = document.querySelector('#run');
+  button.onclick = () => {
+    const result = document.querySelector('#result');
+    try { result.textContent = JSON.stringify(runHudCropComparison(), null, 2); }
+    catch (error) { result.textContent = String(error.stack ?? error); }
+  };
+</script>
+</html>
