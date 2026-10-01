@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>VR glove and OVR component preview</title>
+<body style="margin:0;background:#141a20"><script type="module">
+import * as THREE from 'three';
+import { FacetedGlove } from '../../src/render/xr/facetedGlove.ts';
+import { OverrideButton } from '../../src/render/cockpit/overrideButton.ts';
+import { buildDesign, DESIGNS } from '../../src/render/cockpit/designs/index.ts';
+const renderer=new THREE.WebGLRenderer({antialias:false,preserveDrawingBuffer:true});
+renderer.setSize(1000,700);renderer.setClearColor(0x141a20);document.body.append(renderer.domElement);
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1000/700,0.01,10);
+camera.position.set(0,0.30,0.58);camera.lookAt(0,0,-0.04);
+const gloves=['left','right'].map((s,i)=>{const g=new FacetedGlove(s);g.root.visible=true;g.root.position.x=i===0?-0.12:0.12;g.root.rotation.x=0.45;g.root.rotation.y=i===0?0.7:-0.7;scene.add(g.root);return g;});
+const slot=buildDesign(DESIGNS.TW).slots.find(s=>s.part.pane==='heat');
+const button=new OverrideButton(slot);button.root.position.set(0,-0.035,0.035);button.root.quaternion.identity();button.root.scale.setScalar(1.5);scene.add(button.root);
+renderer.render(scene,camera);
+window.componentCheck=()=>{
+ const before={...renderer.info.memory};gloves.forEach(g=>g.dispose());button.dispose();scene.clear();renderer.render(scene,camera);
+ return {before,after:{...renderer.info.memory},note:'Component geometry/label preview and resource cleanup; no real controller input.'};
+};
+</script></body></html>

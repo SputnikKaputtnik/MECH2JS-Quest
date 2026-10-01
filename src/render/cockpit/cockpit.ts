@@ -24,6 +24,8 @@
  * @portOnly
  */
 import * as THREE from 'three';
+import { OverrideButton } from './overrideButton.ts';
+import { RadarTouchSurface, type CockpitTouchTarget } from './touchSurface.ts';
 import { cropRect, fitRect, MAT_COUNT, Mat, PANE_WIDGETS, type CockpitDesign, type Kit, type PaneName, type Slot } from './kit.ts';
 import { WINDOW_GLSL, type InsetUniforms } from '../passes/hudOverlay.ts';
 
@@ -184,6 +186,9 @@ export class CockpitRenderer {
   private readonly mats = Array.from({ length: MAT_COUNT }, () => new THREE.Vector4(0x40, 0, -1, 0));
   private design: CockpitDesign | null = null;
   private screens: ScreenMesh[] = [];
+  overrideButton: OverrideButton | null = null;
+  private radarTouch: RadarTouchSurface | null = null;
+  readonly touchTargets: CockpitTouchTarget[] = [];
   private parts = new Map<string, THREE.Object3D>();
 
   constructor(private readonly hud: HudUniforms) {
@@ -241,6 +246,7 @@ export class CockpitRenderer {
     this.anchor.matrix.copy(anchor);
     this.anchor.matrixWorldNeedsUpdate = true;
     this.shown.length = 0;
+    if (this.radarTouch) this.radarTouch.enabled = panes.radar !== null;
     // each screen's shown panes, as one rectangle: what the HUD leaves out
     const cut = new Map<number, Pane>();
     for (const s of this.screens) {
@@ -292,6 +298,16 @@ export class CockpitRenderer {
   }
 
   private addScreen(slot: Slot, parent: THREE.Object3D): void {
+    if (slot.part.pane === 'heat' && !this.overrideButton) {
+      this.overrideButton = new OverrideButton(slot);
+      parent.add(this.overrideButton.root);
+      this.touchTargets.push(this.overrideButton);
+    }
+    if (slot.part.pane === 'radar' && !this.radarTouch) {
+      this.radarTouch = new RadarTouchSurface(slot);
+      parent.add(this.radarTouch.root);
+      this.touchTargets.push(this.radarTouch);
+    }
     const [tl, tr, br, bl] = slot.corners;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([...tl!, ...tr!, ...br!, ...tl!, ...br!, ...bl!], 3));
@@ -323,6 +339,11 @@ export class CockpitRenderer {
   }
 
   private clear(): void {
+    this.overrideButton?.dispose();
+    this.overrideButton = null;
+    this.radarTouch?.dispose();
+    this.radarTouch = null;
+    this.touchTargets.length = 0;
     for (const o of [...this.anchor.children]) {
       this.anchor.remove(o);
       o.traverse((x) => {

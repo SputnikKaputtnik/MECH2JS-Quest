@@ -7,12 +7,12 @@
  *   left stick      up / down: throttle + / - (= and -, held); left / right: turn (arrows)
  *   left click      reverse direction (`)
  *   left trigger    cycle weapon (Enter)
- *   left grip       throttle stop (1)
+ *   left grip       left pointing glove / physical cockpit interaction
  *   X / Y           jump jets (j) / the main menu (Esc)
  *   right stick     torso twist and pitch (the mouse; , . and the arrows' torso keys if there is none)
  *   right click     feet to torso (m)
  *   right trigger   fire the selected weapon (Space)
- *   right grip      fire the selected group (;)
+ *   right grip      right pointing glove / physical cockpit interaction
  *   A / B           nearest enemy (e) / next target (t)
  *
  * In mission menus: left stick navigates, A / right trigger confirms,

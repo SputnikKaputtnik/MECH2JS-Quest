@@ -75,3 +75,9 @@ describe('PadMapper', () => {
     expect(m.update(pad({})).keys).toEqual([]);
   });
 });
+
+it('reserves both grips for physical hands without firing a group or stopping throttle', () => {
+  const mapper = new PadMapper();
+  expect(mapper.update(pad({lGrip:1,rGrip:1})).keys).toEqual([]);
+  expect(mapper.update(pad({})).keys).toEqual([]);
+});

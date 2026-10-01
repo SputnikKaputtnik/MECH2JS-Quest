@@ -36,6 +36,9 @@ import { Viewer } from '../generated/classes.gen.ts';
 import type { Game } from './Game.ts';
 import { attachHostInput } from './hostInput.ts';
 import { XrInput } from './xrInput.ts';
+import { CockpitHands } from './cockpitHands.ts';
+import type { CockpitAction } from '../render/cockpit/touchSurface.ts';
+import { commandExecute } from '../sim/ui/commands.ts';
 import { configureQuestSession } from './questSession.ts';
 import { applyQuestFoveation, prepareQuestGraphics, updateQuestResolution } from './questGraphics.ts';
 import { QuestPerf } from './questPerf.ts';
@@ -199,6 +202,8 @@ export class GameScreen {
   private readonly rig = new XrRig();
   private readonly xrSky: XrSky;
   private readonly xrInput = new XrInput();
+  private readonly cockpitHands = new CockpitHands();
+  private readonly pressCockpit = (action: CockpitAction) => { commandExecute(action === 'override' ? 0x40 : 0x30); this.game.audio.menuClick(); };
   private readonly xrViewer = new Viewer();
   private readonly spectator = new Spectator();
   /** this frame's headset passes, kept for the spectator camera to draw again */
@@ -642,6 +647,10 @@ export class GameScreen {
         gameCam.updateProjectionMatrix();
       }
     } else cockpit.hide();
+    const overrideActive = ((mechs.mechTable[mechs.playerMechIndex]?.loadout?.flags ?? 0) & 8) !== 0;
+    this.cockpitHands.update(renderer, rig.rig, cockpit.touchTargets,
+      xr && inCockpit && !menuUp && game.mode === 'play', overrideActive, now, this.pressCockpit);
+    if (xr && inCockpit && !menuUp) xrPass(c => renderer.render(this.cockpitHands.scene, c));
     // Cockpit screen cutouts must never punch holes through a menu.
     hudOverlay.setExcluded(menuUp ? [] : cockpit.shown);
     // the game's 2D (HUD, radar, cockpit text) over it all, through the game's camera - in a headset on a plane ahead
@@ -840,6 +849,7 @@ export class GameScreen {
     this.fpsOverlay.dispose();
     this.groundField.dispose();
     this.shadows.dispose();
+    this.cockpitHands.dispose();
     this.cockpit.dispose();
     this.spectatorTarget?.dispose();
     this.skyGround.dispose();

@@ -74,12 +74,12 @@ export class PadMapper {
     analog('ArrowDown', menu ? p.ly : 0);
     set('Backquote', !menu && p.lClick);
     analog('Enter', menu ? Math.max(p.rTrigger, p.a ? 1 : 0) : p.lTrigger);
-    analog('Digit1', menu ? 0 : p.lGrip);
+
     set('KeyJ', !menu && p.x);
     set('Escape', p.y || (menu && p.b));
     set('KeyM', !menu && p.rClick);
     analog('Space', menu ? 0 : p.rTrigger);
-    analog('Semicolon', menu ? 0 : p.rGrip);
+
     set('KeyE', !menu && p.a);
     set('KeyT', !menu && p.b);
     // the torso: while deflected, and once more at rest to centre it
