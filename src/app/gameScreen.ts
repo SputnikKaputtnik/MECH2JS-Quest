@@ -37,7 +37,7 @@ import type { Game } from './Game.ts';
 import { attachHostInput } from './hostInput.ts';
 import { XrInput } from './xrInput.ts';
 import { configureQuestSession } from './questSession.ts';
-import { applyQuestFoveation, prepareQuestGraphics } from './questGraphics.ts';
+import { applyQuestFoveation, prepareQuestGraphics, updateQuestResolution } from './questGraphics.ts';
 import { QuestPerf } from './questPerf.ts';
 import { QuestComfortMenu, fpsCounterEnabled } from './questComfort.ts';
 import { FpsOverlay } from '../render/xr/fpsOverlay.ts';
@@ -263,6 +263,7 @@ export class GameScreen {
     // the renderer's loop: the window's animation frames, or the headset's while a session is on
     const loop = (now: number) => {
       const start = performance.now();
+      if (!opts.host) updateQuestResolution(webgl, now, true);
       webgl.info.autoReset = false;
       webgl.info.reset();
       this.questPerf.simMs = 0;

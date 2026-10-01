@@ -27,7 +27,7 @@
  */
 import * as THREE from 'three';
 import { configureQuestSession } from './questSession.ts';
-import { applyQuestFoveation, prepareQuestGraphics } from './questGraphics.ts';
+import { applyQuestFoveation, prepareQuestGraphics, updateQuestResolution } from './questGraphics.ts';
 import { ScreenRoom, type ScreenSource } from '../render/xr/screenRoom.ts';
 
 export interface XrHostState {
@@ -146,6 +146,7 @@ export class XrHost {
     this.room.pointAt(null);
     const session = this.renderer.xr.getSession();
     if (session) applyQuestFoveation(this.renderer);
+    updateQuestResolution(this.renderer, now, this.presenter !== null);
     const reference = this.renderer.xr.getReferenceSpace();
     if (frame && reference && this.screen && !this.presenter && session?.visibilityState === 'visible') {
       const right = [...session.inputSources].find(s => s.handedness === 'right');

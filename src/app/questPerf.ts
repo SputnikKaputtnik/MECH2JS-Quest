@@ -1,7 +1,7 @@
 /** @portOnly On-device XR callback and CPU timing. Does not claim compositor/GPU FPS. */
 import type { WebGLRenderer } from 'three';
 import { FrameRate } from './frameRate.ts';
-import { QUEST_TARGET_HZ, renderScale } from './questGraphics.ts';
+import { QUEST_TARGET_HZ, renderScale, dynamicResolutionStatus } from './questGraphics.ts';
 export class QuestPerf {
   private samples: { dt: number; cpu: number; sim: number; calls: number; triangles: number }[] = [];
   private last = 0;
@@ -11,6 +11,7 @@ export class QuestPerf {
   private foveation: number | null = null;
   private supportedHz: number[] = [];
   private memory = {};
+  private dynamicResolution: ReturnType<typeof dynamicResolutionStatus> | null = null;
   private total = 0;
   private ended = false;
   private visible = false;
@@ -42,6 +43,7 @@ export class QuestPerf {
     const dt = this.last ? now - this.last : 0;
     this.last = now;
     this.hz = session.frameRate;
+    this.dynamicResolution = dynamicResolutionStatus(renderer);
     const layer = renderer.xr.getBaseLayer();
     this.framebuffer = layer && 'textureWidth' in layer ? [layer.textureWidth, layer.textureHeight]
       : layer && 'framebufferWidth' in layer ? [layer.framebufferWidth, layer.framebufferHeight] : [0, 0];
@@ -63,7 +65,7 @@ export class QuestPerf {
     };
     const interval=stat('dt'), budget=1000/(this.hz||QUEST_TARGET_HZ);
     return { status:this.status,lastFrameAgeMs:this.lastRecordAt === null ? null : Math.max(0,this.clock()-this.lastRecordAt), samples:n,totalSamples:this.total, displayFps:this.displayFps, missionFps:this.missionFps, seconds:this.samples.reduce((s,v)=>s+v.dt,0)/1000, requestedHz:QUEST_TARGET_HZ, sessionHz:this.hz,
-      supportedHz:this.supportedHz, eyeBuffers:this.eyeBuffers, foveation:this.foveation, requestedRenderScale:renderScale(),
+      supportedHz:this.supportedHz, eyeBuffers:this.eyeBuffers, foveation:this.foveation, requestedRenderScale:renderScale(), dynamicResolution:this.dynamicResolution,
       xrCallbackHz:interval.mean?1000/interval.mean:0,intervalMs:interval,cpuMs:stat('cpu'),simCpuMs:stat('sim'),
       lateIntervals:this.samples.filter(s=>s.dt>budget*1.5).length,drawCalls:stat('calls'),triangles:stat('triangles'),framebuffer:this.framebuffer,memory:this.memory,
       gpuMs:null,note:'XR callback timing; CPU excludes asynchronous GPU work. No compositor measurement.' };

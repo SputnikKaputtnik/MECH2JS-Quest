@@ -14,7 +14,7 @@ import { uiContextFindNode } from '../../src/sim/ui/menus.ts';
 import { cameraGlobals } from '../../src/sim/camera/viewer.ts';
 import { QuestComfortMenu, setEjectionAnimation, ejectionAnimationEnabled, fpsCounterEnabled, setFpsCounter } from '../../src/app/questComfort.ts';
 import { gameSource, hasGameData, installFiles } from '../support/env.ts';
-import { fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale } from '../../src/app/questGraphics.ts';
+import { dynamicResolutionEnabled, setDynamicResolution, fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale } from '../../src/app/questGraphics.ts';
 
 describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -31,6 +31,7 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
     setEjectionAnimation(false);
     setFpsCounter(true);
     setFixedFoveation(true);
+    setDynamicResolution(true);
     setRenderScale(1.25);
     bootMission({ exe, prj, looseFiles: installFiles(), mission: 'AMY_SCN1' });
     kb = input.devices[input.keyboardDevice]!.driver as KeyboardDriver;
@@ -86,6 +87,18 @@ describe.runIf(hasGameData)('Quest comfort menu and mission abort', () => {
     press(0x50); press(0x4d);
     expect(renderScale()).toBe(1.5);
     expect(stored.get('mw2.quest.render-scale')).toBe('1.5');
+  });
+
+  it('toggles default-on dynamic resolution using the controller menu path', () => {
+    press(0x01); press(0x07);
+    expect(dynamicResolutionEnabled()).toBe(true);
+    expect(top().items[6]!.label).toBe('Dynamic resolution');
+    for (let i = 0; i < 4; i++) press(0x50);
+    press(0x1c);
+    expect(dynamicResolutionEnabled()).toBe(false);
+    expect(stored.get('mw2.quest.dynamic-resolution')).toBe('false');
+    press(0x1c);
+    expect(dynamicResolutionEnabled()).toBe(true);
   });
 
   it('ends a confirmed VR abort without camera spin and writes the ordinary failed mission result', () => {
