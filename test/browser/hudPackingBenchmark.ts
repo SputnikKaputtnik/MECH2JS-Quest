@@ -3,6 +3,7 @@ import { HudOverlay } from '../../src/render/passes/hudOverlay.ts';
 import { HudOverlay as ReferenceHudOverlay } from '../reference/hudOverlay.ts';
 import { makeUniforms } from '../../src/render/materials/indexedMaterial.ts';
 import { VfxWindow, vfxWindowAllocate } from '../../src/engine/vfx/vfx.ts';
+import { runHudTransferBenchmark } from './hudTransferBenchmark.ts';
 export async function runHudPackingBenchmark(source: VfxWindow) {
   const rows = [];
   for (const mode of ['captured', 'markers', 'inset']) {
@@ -35,5 +36,6 @@ export async function runHudPackingBenchmark(source: VfxWindow) {
       rows.push({ mode, width: w, height: h, rounds, jsMs: mean('jsMs'), wasmMs: mean('wasmMs'), fallbackMs: mean('fallbackMs'), mismatches: 0 });
     } finally { a.dispose(); b.dispose(); c.dispose(); }
   }
-  return { kind: 'whole-hud-update-with-copies', rows, note: 'Frozen input, no GPU texture upload or XR FPS included.' };
+  const transfers = await runHudTransferBenchmark(source);
+  return { kind: 'whole-hud-update-with-copies', rows, transfers, note: 'Frozen input, no GPU texture upload or XR FPS included.' };
 }
