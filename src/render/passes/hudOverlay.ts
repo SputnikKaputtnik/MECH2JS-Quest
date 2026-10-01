@@ -187,6 +187,7 @@ export class HudOverlay {
     const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms: { ...this.u, ...excludeUniforms() }, vertexShader, fragmentShader, depthTest: false, depthWrite: false, transparent: false });
     this.screenMaterial = mat;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    this.screenMesh = mesh;
     mesh.frustumCulled = false;
     this.scene.add(mesh);
     this.worldMesh = this.worldPlane(1 << HUD_LAYER.rest);
@@ -195,10 +196,11 @@ export class HudOverlay {
   }
 
   /** the window on a unit plane facing +z, for a headset (placed by the VR rig): HUD_LAYER.rest, and any layer setWorldLayers adds */
-  readonly worldMesh: THREE.Mesh;
+  readonly worldMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   /** the reticle's layer alone, and the target marker's, on planes of their own */
-  readonly reticleMesh: THREE.Mesh;
-  readonly markerMesh: THREE.Mesh;
+  readonly reticleMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  readonly markerMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private readonly screenMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
 
   /** the centre of the reticle layer's pixels in window pixels (x, y down), or null when it drew none */
   get reticleCentre(): THREE.Vector2 | null {
@@ -258,7 +260,7 @@ export class HudOverlay {
     return this.u;
   }
 
-  private worldPlane(layers: number): THREE.Mesh {
+  private worldPlane(layers: number): THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> {
     const uniforms = { ...this.u, uLayers: { value: layers }, uBounds: { value: new THREE.Vector4(0, 0, 1, 1) }, ...excludeUniforms() };
     const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms, vertexShader: worldVertexShader, fragmentShader: worldFragmentShader, depthTest: false, depthWrite: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
@@ -338,5 +340,10 @@ export class HudOverlay {
 
   dispose(): void {
     this.tex?.dispose();
+    for (const mesh of [this.screenMesh, this.worldMesh, this.reticleMesh, this.markerMesh]) {
+      mesh.removeFromParent();
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
   }
 }

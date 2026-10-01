@@ -838,7 +838,9 @@ export class GameScreen {
     this.shadows.dispose();
     this.cockpit.dispose();
     this.spectatorTarget?.dispose();
-    this.sr.clear();
+    this.skyGround.dispose();
+    this.xrSky.dispose();
+    this.sr.destroy();
     if (!host) webgl.dispose();
     this.el.removeChild(webgl.domElement);
   }

@@ -9,6 +9,7 @@
   import { runWorldBatchComparison } from './worldBatch.ts';
   import { runHudCropComparison } from './hudCrop.ts';
   import { runLightingBenchmark } from './lightingBenchmark.ts';
+  import { runResourceLifetimeCheck } from './resourceLifetime.ts';
   window.runQuestTests = async () => {
     const status = document.querySelector('#result');
     status.textContent = 'Running world comparison…';
@@ -17,10 +18,12 @@
     const hud = runHudCropComparison();
     status.textContent = 'Running lighting CPU comparison…';
     const lighting = await runLightingBenchmark();
+    status.textContent = 'Checking mission resource cleanup…';
+    const resources = await runResourceLifetimeCheck();
     const result = {
       kind: 'offscreen-image-regression', xr: false,
       userAgent: navigator.userAgent, visibility: document.visibilityState,
-      world, hud, lighting,
+      world, hud, lighting, resources,
       note: 'Executed on device; no XR/compositor FPS or thermal-performance claim.'
     };
     status.textContent = JSON.stringify(result, null, 2);

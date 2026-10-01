@@ -97,7 +97,7 @@ export interface SkyGroundState {
 const e = new THREE.Euler();
 
 export class SkyGround {
-  readonly mesh: THREE.Mesh;
+  readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private readonly u = {
     uPalette: { value: null as unknown as THREE.DataTexture },
     uUpPlane: { value: new THREE.Vector3() },
@@ -122,6 +122,12 @@ export class SkyGround {
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1000;
+  }
+
+  dispose(): void {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mesh.material.dispose();
   }
 
   /** `width` and `height` are the render target's, in pixels. */

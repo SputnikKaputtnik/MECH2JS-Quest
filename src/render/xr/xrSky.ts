@@ -64,7 +64,7 @@ void main() {
 `;
 
 export class XrSky {
-  readonly mesh: THREE.Mesh;
+  readonly mesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private readonly u = {
     uPalette: { value: null as unknown as THREE.DataTexture },
     uBandTan: { value: 0 },
@@ -84,6 +84,12 @@ export class XrSky {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1000;
     this.mesh.visible = false;
+  }
+
+  dispose(): void {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mesh.material.dispose();
   }
 
   /** Centres the sphere on `eye` (world position); `tanH` is the game's half field of view. */

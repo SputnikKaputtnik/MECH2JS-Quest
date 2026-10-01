@@ -99,6 +99,7 @@ export class IndexedViews implements RenderPort {
 
   dispose(): void {
     for (const v of this.views.values()) {
+      v.sky.dispose();
       v.sr.destroy();
       v.target.dispose();
     }

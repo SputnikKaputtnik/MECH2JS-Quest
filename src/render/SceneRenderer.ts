@@ -147,6 +147,7 @@ export class SceneRenderer {
   /** drawn first, and the depth buffer cleared after it: the sky pass and backdropNode's tree (see sync) */
   readonly backdropScene = new THREE.Scene();
   readonly uniforms: IndexedUniforms;
+  private readonly ownsUniformTextures: boolean;
   private readonly material: THREE.ShaderMaterial;
   private readonly behindMaterial: THREE.ShaderMaterial;
   /** mech parts: the same material with uPanel set, for the armour-panel enhancement */
@@ -171,6 +172,7 @@ export class SceneRenderer {
 
   /** `uniforms`: a view's own set (makeViewUniforms) sharing the textures of the main one; the main view makes its own. */
   constructor(uniforms?: IndexedUniforms) {
+    this.ownsUniformTextures = uniforms === undefined;
     this.uniforms = uniforms ?? makeUniforms();
     this.material = makeIndexedMaterial(this.uniforms);
     this.behindMaterial = makeIndexedMaterial(this.uniforms, { behind: true });
@@ -255,6 +257,12 @@ export class SceneRenderer {
     this.behindMaterial.dispose();
     this.mechMaterial.dispose();
     this.lineMaterial.dispose();
+    if (this.ownsUniformTextures) {
+      // Read the current holders: atlas uploads replace their initial texture.
+      // uShadowMap belongs to Shadows' render target, not this uniform set.
+      const u = this.uniforms;
+      for (const texture of [u.uPalette, u.uLuma, u.uAtlas, u.uSlots, u.uShadowTable]) texture.value.dispose();
+    }
   }
 
   private dispose(e: ObjEntry): void {
