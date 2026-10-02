@@ -3,6 +3,11 @@
 This is an isolated development path, not the gameplay renderer. The installed
 Quest app still runs simulation and presentation on its main JavaScript thread.
 
+**Current handoff:** see [Quest development handoff](quest-handoff.md) for the
+latest visible-run results, missing features, ANR status, reproduction commands
+and fair-comparison criteria. The codec improvements below do not establish a
+performance win over the complete gameplay build.
+
 ## Current contract
 
 - `SnapshotProducer` / `SnapshotConsumer` use three transferable buffers and a
@@ -85,15 +90,15 @@ uploaded geometry count because previously viewed LODs are uploaded lazily again
 The worker probe now adopts the first snapshot, skips the second, updates the
 same renderer with the third, and continues drawing during the producer stall.
 
-## Remaining work
+## Reference-path limits and current follow-up
 
-Capture still walks/copies the full scene, compares arrays and encodes metadata.
-Decoding still copies arrays and parses temporary resource descriptions; applying
-a state still compares and copies CPU fields. GPU geometry and texture reuse
-is verified, but its effect on CPU frame time has not been benchmarked. Smaller
-dynamic state, frame-budget measurements, and gameplay integration remain necessary. The worker
-test does not yet provide gameplay input, audio/HUD delivery, shell transitions,
-map rendering, or enhancement passes. No 90 Hz XR result is claimed.
+The full/resource reference path still copies arrays and parses temporary
+resource descriptions. It remains a correctness oracle, not the intended
+per-step gameplay transport. The compact channel and visible experiment below
+supersede the earlier lack of CPU measurements, input and 2D HUD presentation.
+Producer capture still traverses the scene to discover changes. Full gameplay
+parity, GPU/compositor timing and sustained 90 Hz presentation remain unproven;
+see the [current handoff](quest-handoff.md) for the outstanding work.
 
 ## Continuous mission experiment
 
@@ -135,9 +140,10 @@ This is a short diagnostic run, not a controlled XR performance benchmark. The
 faster worker delivered 90 adopted snapshots instead of 17, but more frequent
 44 ms decode/adoption work reduced offscreen drawing opportunities. Offloading
 simulation alone therefore does not solve frame pacing with this codec. The
-next production boundary must send versioned assets only when changed and
-compact binary dynamic state, avoiding full-scene capture/JSON/object traversal
-on every simulation step. The full codec remains the image-correctness oracle.
+next experiment therefore introduced versioned assets and compact binary dynamic
+state, described below. It removes per-frame JSON/ObjectLoader on the consumer,
+but producer capture still traverses the world to discover changes. Production
+integration remains pending. The full codec remains the image-correctness oracle.
 
 
 ## Compact binary presenter channel (2026-10-02)
@@ -179,6 +185,7 @@ Autonomous embedded-Quest tests:
   deletion/reappearance, births, baked vertices, texture resizing, HUD/texture
   ownership after buffer reuse, sampler rejection and malformed frames.
 
+These compare two worker prototypes, not the old full gameplay build.
 The final paired short runs used the same runtime, mission and input schedule.
 They are wall-clock-driven runs, not identical recorded simulation states:
 
@@ -193,7 +200,7 @@ They are wall-clock-driven runs, not identical recorded simulation states:
 
 The twenty-second firing run adopted 391 states, observed up to three concurrent
 player projectiles, and submitted 54 offscreen views during the 600 ms worker
-stall. Adoption mean/p95/max was 2.49/3.20/9.60 ms. Thus the 1–2 ms adoption target
+stall. Adoption mean/p95/max was 2.49/3.20/9.60 ms. Thus the 1â€“2 ms adoption target
 is not yet met consistently. Initial drawing also includes large shader/cache
 startup costs (submission maximum about 44 ms); sustained headroom must be
 verified separately. The short compact run adopted 111 states versus 107 in the
@@ -261,3 +268,8 @@ the panel, then a restart produced advancing snapshots and two 1680x1760 eye
 views while the XR-session-entry counter stayed at one. The current callback
 counter returned to about 90/s. Controller neutral gating/button bounds have
 unit coverage; this brief lifecycle check does not establish long-run ANR freedom.
+
+
+The later 125% user-played repeat, including two mission restarts, is summarized
+in the [2026-10-02 handoff](quest-handoff.md#measurements-and-their-limits). It
+retains the same feature-parity limitations and does not demonstrate stable 90 Hz.

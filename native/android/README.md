@@ -9,6 +9,10 @@ The current package is a development prototype. Wolvic's window UI and its
 first-run notices are still present before **Start in VR**. This is not yet a
 polished direct-to-cockpit launcher. No performance improvement is claimed.
 
+For current worker experiments, open runtime failures and measurement limits,
+read the [Quest development handoff](../../docs/quest-handoff.md). The USB-served
+worker test route is separate from this APK's bundled full-game frontend.
+
 ## Build
 
 Requirements: JDK 21 on PATH, Python 3.11+, Android SDK platform 35 and build-tools

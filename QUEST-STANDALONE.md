@@ -4,6 +4,10 @@ Experimental Quest 3 fork of [Adam4lexander/MECH2JS](https://github.com/Adam4lex
 
 The first goal is a faithful VR interpretation of the original visuals. Optional stylistically compatible enhancements can follow later. Rendering and simulation run on the headset. The offline Quest Browser build remains available; a separate [Android prototype with its own embedded runtime](native/android/README.md) now runs without Quest Browser or a PC connection. The native integration is still experimental. DRS is unavailable specifically in its pinned Wolvic Chromium 1.4 runtime because reduced eye viewports produced incorrect stereo; full eye rectangles were confirmed correct in the headset.
 
+## Current development handoff
+
+See [the 2026-10-02 handoff](docs/quest-handoff.md) before resuming worker or performance work. The visible worker route is a separate, incomplete development test; it does not replace the standalone APK frontend. Its near-90 callback readings at 125% are not a fair comparison with the full game and do not establish stable 90 FPS or extra graphics headroom. Historical measurements below retain their original runtime/workload scope.
+
 ## Install your own game data
 
 Original game files are not included. A compatible DOS installation is required; Windows editions and differing executable layouts are not interchangeable. Run `npm run check:install -- "path/to/install"` before importing a candidate installation.

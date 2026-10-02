@@ -4,6 +4,8 @@ Quest 3 adaptation of [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/M
 
 **Experimental:** 90 Hz is a target, not a claim of sustained performance. Original game data must be supplied privately and are not included. The working browser build is joined by a [standalone Android prototype](native/android/README.md) with an embedded Wolvic Chromium/OpenXR runtime; integration and performance testing are ongoing.
 
+Start with the [current development handoff](docs/quest-handoff.md): worker/full-game differences, verified measurements, open failures and reproducible next steps. The reduced worker prototype has **not** established a performance improvement over the complete playable build.
+
 See [Quest setup, controls and measured status](QUEST-STANDALONE.md). The original project's documentation is preserved below.
 
 ## Original project: MechWarrior 2 TypeScript port
