@@ -15,6 +15,15 @@ Quest app still runs simulation and presentation on its main JavaScript thread.
 - `WorldStateRenderer` prepares this owned scene against a fresh camera. It can
   change view direction while the simulation worker is blocked. Legacy drawing
   globals are installed synchronously and restored in `finally`.
+- World packet version 3 assigns producer-local weak object identities.
+  `WorldStateRenderer.apply` updates existing objects, LOD blocks and vertices.
+  Transforms, normals and drawing state preserve GPU geometry. Vertex/UV or
+  topology changes invalidate only that object's cached meshes. Removed objects
+  are evicted from both world and cockpit caches, including objects leaving the
+  cockpit but still referenced elsewhere. Recreate the consumer for a new epoch.
+- Indexed texture objects and uniform holders persist. Equal pixels require no
+  upload; changed pixels update the existing texture. Storage/format changes
+  release the GPU allocation before uploading again with the same holder.
 - The full binary packet is the correctness reference. The resource variant
   sends an immutable basis once, reliably, before any lossy mailbox messages.
   Every subsequent packet contains complete metadata and either baseline
@@ -66,12 +75,22 @@ worker probe also discarded two mailbox publications, adopted the third, then
 made 58 offscreen submissions with changing views during a 600 ms producer
 stall. Those submissions are **not XR frames or display FPS**.
 
+The follow-up persistent-consumer test extends this to six simulation phases:
+378 exact image comparisons, 60 repeated state adoptions with unchanged geometry
+IDs and texture versions, and six complete scene retirement/restoration cycles
+without GPU-resource growth. The fixture retains 200–204 scene geometries as
+objects appear during the mission; renderer texture count stays at 11 (including
+the separate reference renderer and render target). Retirement can reduce the
+uploaded geometry count because previously viewed LODs are uploaded lazily again.
+The worker probe now adopts the first snapshot, skips the second, updates the
+same renderer with the third, and continues drawing during the producer stall.
+
 ## Remaining work
 
 Capture still walks/copies the full scene, compares arrays and encodes metadata.
-Decoding still copies arrays, reconstructs the object graph and creates renderer
-resources. Transfer savings alone do not establish a faster render thread.
-Reuse of decoded geometry and GPU resources, smaller dynamic state, frame
-budget measurements, and gameplay integration remain necessary. The worker
+Decoding still copies arrays and parses temporary resource descriptions; applying
+a state still compares and copies CPU fields. GPU geometry and texture reuse
+is verified, but its effect on CPU frame time has not been benchmarked. Smaller
+dynamic state, frame-budget measurements, and gameplay integration remain necessary. The worker
 test does not yet provide gameplay input, audio/HUD delivery, shell transitions,
 map rendering, or enhancement passes. No 90 Hz XR result is claimed.

@@ -53,8 +53,9 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
   const a = new Uint8Array(640 * 480 * 4), b = a.slice();
   let headSnapshot: WorldStateRenderer | null = null;
   let headSnapshotBytes = 0;
+  let resourceFrame: Uint8Array | undefined;
   try {
-    for (let phase = 0; phase < (variant === 'scrounge' ? 6 : 3); phase++) {
+    for (let phase = 0; phase < (variant === 'scrounge' || variant === 'resourceSnapshot' ? 6 : 3); phase++) {
       if (variant === 'scrounge') renderOptions.wireframeMode = [0, 0, 1, 0, 2, 0][phase]!;
       for (let f = 0; f < 40; f++) {
         for (let t = 0; t < 9; t++) ailTimerService();
@@ -66,7 +67,7 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
       cameraFromViewer(viewer(), camera, 4 / 3);
       origin.copy(camera.position); baseRotation.copy(camera.quaternion);
       if (headVariant) {
-        headSnapshot?.dispose();
+        if (variant !== 'resourceSnapshot') headSnapshot?.dispose();
         if (variant === 'resourceSnapshot') {
           // Exercise a changed palette after the basis, including a discarded
           // publication of that exact update. A chain of frame deltas would fail.
@@ -84,9 +85,11 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
           }
           resources.encode(state); // deliberately discarded, never decoded
           const bytes = resources.encode(state);
+          resourceFrame = bytes.slice();
           headSnapshotBytes = bytes.byteLength;
           const decoded = receiver!.decode(structuredClone(bytes, { transfer: [bytes.buffer] })) as WorldPacket;
-          headSnapshot = new WorldStateRenderer(decoded);
+          if (headSnapshot) headSnapshot.apply(decoded);
+          else headSnapshot = new WorldStateRenderer(decoded);
         } else {
           const bytes = encodeWorldState(viewer(), sr.uniforms);
           headSnapshotBytes = bytes.byteLength;
@@ -132,6 +135,7 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
         const reference = draw(false, a);
         let snapshotBytes = 0;
         let batched;
+        let reuse: ReturnType<typeof verifySnapshotReuse> | undefined;
         if (headVariant) {
           snapshotBytes = headSnapshotBytes;
           // Deliberately remove live scene roots while the consumer prepares its
@@ -142,6 +146,9 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
           finally { [worldRootNode.listNext, viewScene.backdropNode, viewScene.cockpitHeadNode] = saved; }
           renderer.clear(); renderer.info.reset();
           headSnapshot!.render(renderer, drawCamera);
+          if (variant === 'resourceSnapshot' && yaw === 0 && pitch === 0 && eye === -0.032) {
+            reuse = verifySnapshotReuse(headSnapshot!, () => receiver!.decode(resourceFrame!) as WorldPacket, renderer, camera, drawCamera);
+          }
           batched = { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
           renderer.readRenderTargetPixels(target, 0, 0, 640, 480, b);
         } else if (variant === 'snapshot') {
@@ -166,7 +173,7 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
         }
         const submission = variant === 'scrounge' && phase === 0 && yaw === 0 && eye === 'stereo'
           ? runScroungeSubmissionBenchmark(sr, ground, renderer, drawCamera as THREE.ArrayCamera) : undefined;
-        rows.push({ phase, yaw, pitch, eye, drawn, different, percent: different / (640 * 480) * 100, reference, batched, submission, snapshotBytes, resourceBasisBytes, fullSnapshotBytes });
+        rows.push({ phase, yaw, pitch, eye, drawn, different, percent: different / (640 * 480) * 100, reference, batched, submission, snapshotBytes, resourceBasisBytes, fullSnapshotBytes, reuse });
       }
     }
     if (!rows.some((r) => r.drawn > 1000)) throw Error('Comparison rendered no visible world');
@@ -181,4 +188,42 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
     renderOptions.wireframeMode = previousWireframe;
     headSnapshot?.dispose(); ground.dispose(); sr.destroy(); target.dispose(); renderer.dispose(); game.audio.pause();
   }
+}
+
+/** Same-state adoption must preserve actual GPU object identities and avoid
+ * texture uploads. Empty/restore cycles also exercise cockpit cache retirement. */
+function verifySnapshotReuse(snapshot: WorldStateRenderer, decode: () => WorldPacket,
+  renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, drawCamera: THREE.Camera) {
+  const geometryIds = () => {
+    const ids: number[] = [];
+    for (const scene of [snapshot.renderer.scene, snapshot.renderer.backdropScene, snapshot.renderer.cockpitScene]) {
+      scene.traverse(o => { if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) ids.push(o.geometry.id); });
+    }
+    return ids.sort((a, b) => a - b);
+  };
+  const before = geometryIds();
+  const textures = Object.values(snapshot.renderer.uniforms).map(u => u.value).filter(v => v instanceof THREE.DataTexture);
+  const versions = textures.map(t => t.version);
+  const memory = { ...renderer.info.memory };
+  const draw = () => { snapshot.sync(camera); renderer.clear(); snapshot.render(renderer, drawCamera); };
+  for (let n = 0; n < 10; n++) {
+    snapshot.apply(decode()); draw();
+    if (JSON.stringify(geometryIds()) !== JSON.stringify(before)) throw Error('Unchanged snapshot rebuilt geometry');
+    if (textures.some((t, i) => t.version !== versions[i])) throw Error('Unchanged snapshot reuploaded texture');
+    if (renderer.info.memory.geometries !== memory.geometries || renderer.info.memory.textures !== memory.textures) {
+      throw Error('Repeated snapshot resource count changed');
+    }
+  }
+  const empty = decode(); empty.objects = []; empty.world = []; empty.backdrop = []; empty.cockpit = [];
+  snapshot.apply(empty); draw();
+  if (geometryIds().length !== 0) throw Error('Removed world/cockpit retained geometries');
+  const retiredGeometries = memory.geometries - renderer.info.memory.geometries;
+  snapshot.apply(decode()); draw();
+  // After retirement only currently visible LODs have been uploaded again;
+  // geometry counts may shrink compared with the preceding head-turn sweep.
+  if (renderer.info.memory.geometries > memory.geometries || renderer.info.memory.textures !== memory.textures || geometryIds().length !== before.length) {
+    throw Error(`Snapshot removal/restore cycle changed GPU resources: ${JSON.stringify({ memory, after: renderer.info.memory, beforeIds: before.length, afterIds: geometryIds().length, retiredGeometries })}`);
+  }
+  return { repeatedUpdates: 10, retainedGeometries: before.length, extraTextureUploads: 0,
+    retiredGeometries, memoryBefore: memory, memoryAfter: { ...renderer.info.memory } };
 }

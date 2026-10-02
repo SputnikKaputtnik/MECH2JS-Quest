@@ -10,7 +10,7 @@ export async function runSceneWorkerProbe(unculled = false, resources = false) {
   const worker = new Worker(new URL('./referenceSnapshotWorker.ts', import.meta.url), { type: 'module' });
   const mailbox = new SnapshotConsumer<{ bytes: number; unculled: boolean; resources: boolean; final: boolean; fullBytes: number }>('scene-probe', (m, transfer) => worker.postMessage(m, transfer));
   let decoder: ResourcePacketDecoder | undefined;
-  let basisBytes = 0, fullBytes = 0, received = 0;
+  let basisBytes = 0, fullBytes = 0, received = 0, adopted = 0, reusedUpdates = 0;
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setSize(320, 240);
   const target = new THREE.WebGLRenderTarget(320, 240);
@@ -35,19 +35,26 @@ export async function runSceneWorkerProbe(unculled = false, resources = false) {
           } else if (m.kind === 'snapshot') {
             received++;
             mailbox.receive(m);
-            if (!m.meta.final) return; // let the mailbox discard earlier updates
+            // Adopt the first state, skip the middle state, then update the
+            // existing renderer from the newest state while recycling buffers.
+            if (!m.meta.final && received !== 1) return;
             const packet = mailbox.acquire()!;
+            adopted++;
             bytes = packet.meta.bytes;
             fullBytes = packet.meta.fullBytes;
-            scene = packet.meta.resources ? new WorldStateRenderer(decoder!.decode(new Uint8Array(packet.buffer, 0, bytes)) as WorldPacket)
-              : packet.meta.unculled ? new WorldStateRenderer(new Uint8Array(packet.buffer, 0, bytes))
+            if (packet.meta.resources) {
+              const state = decoder!.decode(new Uint8Array(packet.buffer, 0, bytes)) as WorldPacket;
+              if (scene instanceof WorldStateRenderer) { scene.apply(state); reusedUpdates++; }
+              else scene = new WorldStateRenderer(state);
+            } else scene = packet.meta.unculled ? new WorldStateRenderer(new Uint8Array(packet.buffer, 0, bytes))
               : new ReferenceScene(new Uint8Array(packet.buffer, 0, bytes));
             baseRotation.copy(scene.camera.quaternion);
-            mailbox.close(); // recycle immediately: renderer must own all pixels/vertices
+            if (m.meta.final) mailbox.close(); // renderer must own all pixels/vertices
             if (scene instanceof WorldStateRenderer) scene.sync(scene.camera, 320, 240);
             renderer.setRenderTarget(target); renderer.clear(); scene.render(renderer);
             const pixels = new Uint8Array(320 * 240 * 4);
             renderer.readRenderTargetPixels(target, 0, 0, 320, 240, pixels);
+            visiblePixels = 0;
             for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! + pixels[i + 1]! + pixels[i + 2]! > 0) visiblePixels++;
             if (visiblePixels < 1000) throw Error('Worker snapshot rendered no visible scene');
           } else if (m.kind === 'source-disposed') worker.postMessage({ kind: 'stall' });
@@ -67,7 +74,7 @@ export async function runSceneWorkerProbe(unculled = false, resources = false) {
             const during = draws.filter(t => t >= m.start && t < m.end);
             if (during.length < 3) throw Error(`No independent drawing during stall: ${during.length}`);
             resolve({ kind: 'offscreen-worker-scene', xr: false, unculled, snapshotBytes: bytes, visiblePixels,
-              resources, basisBytes, fullBytes, discardedSnapshots: received - 1,
+              resources, basisBytes, fullBytes, discardedSnapshots: received - adopted, reusedUpdates,
               producerStallMs: m.end - m.start, consumerDrawsDuringStall: during.length,
               sourceDisposedBeforeStall: true, note: unculled ? 'Consumer rotates through a full turn during the worker stall; offscreen submissions, not XR/display FPS.'
                 : 'Fixed-view reference scene; no head-turn completeness, gameplay, XR or FPS claim.' });

@@ -12,6 +12,7 @@ import { HOOK, renderOptions } from '../../sim/display/renderState.ts';
 import { SceneRenderer, type SceneInput } from '../SceneRenderer.ts';
 import { makeIndexedMaterial, type IndexedUniforms } from '../materials/indexedMaterial.ts';
 import { cameraFromViewer, viewerFromCamera } from '../bridge/cameraViewer.ts';
+import { updateSnapshotUniforms } from './snapshotUniforms.ts';
 import { renderView } from '../pipeline/viewLatch.ts';
 import { captureReferenceScene, ReferenceScene, type ReferenceScenePacket } from './referenceScene.ts';
 import { encodeReferencePacket, decodeReferencePacket } from './referencePacket.ts';
@@ -24,9 +25,9 @@ interface BlockData {
   vertices: { type: 'Float64Array'; data: ArrayLike<number> };
   polygons: { values: Numbers; owner: number | null; indices: number[] }[];
 }
-interface ObjectData { values: Numbers; matrix: number[] | null; blocks: BlockData[] }
+interface ObjectData { id: number; values: Numbers; matrix: number[] | null; blocks: BlockData[] }
 export interface WorldPacket {
-  version: 2;
+  version: 3;
   objects: ObjectData[];
   world: number[];
   backdrop: number[];
@@ -37,6 +38,37 @@ export interface WorldPacket {
   viewer: { values: Numbers; rotation: number[]; lightPos: number[] };
   resources: ReferenceScenePacket;
   sortFlags: number;
+}
+
+// Producer-local weak identities survive list reorder without retaining dead
+// simulation objects. A new worker/mission consumer starts a fresh identity scope.
+const objectIds = new WeakMap<WorldObject, number>();
+let nextObjectId = 0;
+function objectId(object: WorldObject): number {
+  let id = objectIds.get(object);
+  if (id === undefined) { id = ++nextObjectId; objectIds.set(object, id); }
+  return id;
+}
+
+function sameGeometry(a: ObjectData, b: ObjectData): boolean {
+  if (!!a.matrix !== !!b.matrix || ((a.values.flags! ^ b.values.flags!) & 1) ||
+      ((a.values.type! ^ b.values.type!) & 0x100) || a.blocks.length !== b.blocks.length) return false;
+  const positions = a.matrix ? ['modelX', 'modelY', 'modelZ'] : ['worldX', 'worldY', 'worldZ'];
+  const keys = [...positions, 'texU', 'texV'].map(k => vertexKeys.indexOf(k));
+  return a.blocks.every((block, i) => {
+    const other = b.blocks[i]!;
+    if (block.values.vertexCount !== other.values.vertexCount || block.values.polygonCount !== other.values.polygonCount ||
+        block.polygons.length !== other.polygons.length ||
+        block.vertices.data.length !== other.vertices.data.length) return false;
+    for (let v = 0; v < block.vertices.data.length; v += vertexKeys.length) {
+      for (const k of keys) if (block.vertices.data[v + k] !== other.vertices.data[v + k]) return false;
+    }
+    return block.polygons.every((poly, j) => {
+      const next = other.polygons[j]!;
+      return poly.values.code === next.values.code && poly.values.vertexCount === next.values.vertexCount &&
+        poly.indices.length === next.indices.length && poly.indices.every((index, k) => index === next.indices[k]);
+    });
+  });
 }
 
 function treeObjects(root: SceneNode | null): WorldObject[] {
@@ -80,7 +112,7 @@ export function captureWorldState(viewer: Viewer, uniforms: IndexedUniforms): Wo
       vertices: { type: 'Float64Array', data: block.vertices.flatMap(v => vertexKeys.map(k => (v as unknown as Numbers)[k]!)) },
       polygons: block.polygons.map(p => ({ values: numbers(p), owner: p.owner ? id(p.owner) : null, indices: [...p.indices] })),
     });
-    records.push({ values: numbers(obj), matrix: obj.node ? [...obj.node.worldBlock] : null, blocks });
+    records.push({ id: objectId(obj), values: numbers(obj), matrix: obj.node ? [...obj.node.worldBlock] : null, blocks });
   }
   // Serialize the shared indexed resources once, using a zero-vertex carrier.
   const carrier = new THREE.Mesh(new THREE.BufferGeometry(), makeIndexedMaterial(uniforms));
@@ -91,7 +123,7 @@ export function captureWorldState(viewer: Viewer, uniforms: IndexedUniforms): Wo
     resources = captureReferenceScene({ world: resourceWorld, backdrop: new THREE.Scene(), cockpit: new THREE.Scene(), camera });
   } finally { carrier.geometry.dispose(); carrier.material.dispose(); }
   const packet: WorldPacket = {
-    version: 2, objects: records, world, backdrop, cockpit, cockpitActive: cameraGlobals.cockpitViewActive,
+    version: 3, objects: records, world, backdrop, cockpit, cockpitActive: cameraGlobals.cockpitViewActive,
     options: { ...renderOptions }, lighting: { lightDimDistance: lighting.lightDimDistance, damageShadeRaises: lighting.damageShadeRaises },
     viewer: { values: numbers(viewer), rotation: [...viewer.rotation], lightPos: [...viewer.lightPos] },
     resources, sortFlags: renderView.polySortFlags,
@@ -104,31 +136,94 @@ export class WorldStateRenderer {
   readonly renderer: SceneRenderer;
   readonly camera: THREE.PerspectiveCamera;
   private readonly resources: ReferenceScene;
-  private readonly source: SceneInput;
-  private readonly packet: WorldPacket;
+  private source: SceneInput = { world: [], backdrop: null, cockpit: null };
+  private readonly objects = new Map<number, WorldObject>();
+  private packet: WorldPacket;
   private readonly cullViewer = new Viewer();
   private disposed = false;
 
   /** Object input transfers ownership of already decoded snapshot data. */
   constructor(bytes: Uint8Array | WorldPacket) {
     const p = this.packet = bytes instanceof Uint8Array ? decodeReferencePacket(bytes) as WorldPacket : bytes;
-    if (p.version !== 2) throw Error('Unsupported world snapshot');
-    const objects = p.objects.map(data => Object.assign(new WorldObject(), data.values));
+    if (p.version !== 3) throw Error('Unsupported world snapshot');
+    this.viewer = new Viewer();
+    this.resources = new ReferenceScene(p.resources);
+    this.camera = this.resources.camera;
+    const carrier = this.resources.world.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+    this.renderer = new SceneRenderer(carrier.material.uniforms as IndexedUniforms);
+    this.applyObjects(p);
+  }
+
+  /** Adopt a complete state from the same mission/worker epoch. Stable engine
+   * identities keep SceneRenderer caches alive; structural changes invalidate
+   * only the affected object. Do not apply a different mission to this instance. */
+  apply(bytes: Uint8Array | WorldPacket): void {
+    if (this.disposed) throw Error('Disposed world snapshot');
+    const p = bytes instanceof Uint8Array ? decodeReferencePacket(bytes) as WorldPacket : bytes;
+    if (p.version !== 3) throw Error('Unsupported world snapshot');
+    const incoming = new ReferenceScene(p.resources);
+    try {
+      const carrier = incoming.world.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+      updateSnapshotUniforms(this.renderer.uniforms, carrier.material.uniforms as IndexedUniforms);
+      this.camera.copy(incoming.camera);
+    } finally { incoming.dispose(); }
+    this.applyObjects(p);
+  }
+
+  private applyObjects(p: WorldPacket): void {
+    const previous = new Map(this.packet.objects.map(record => [record.id, record]));
+    const ids = new Set(p.objects.map(record => record.id));
+    if (ids.size !== p.objects.length) throw Error('Duplicate snapshot object identity');
+    const cockpitIds = new Set(p.cockpit.map(index => p.objects[index]!.id));
+    // Cockpit entries otherwise remain cached while hidden. An object can leave
+    // that pass yet remain in the packet as a polygon owner or world object.
+    for (const index of this.packet.cockpit) {
+      const id = this.packet.objects[index]!.id;
+      const object = this.objects.get(id);
+      if (object && !cockpitIds.has(id)) this.renderer.forgetObject(object);
+    }
+    for (const [id, object] of this.objects) if (!ids.has(id)) {
+      this.renderer.forgetObject(object); this.objects.delete(id);
+    }
+    const objects = p.objects.map(data => {
+      let object = this.objects.get(data.id);
+      if (!object) { object = new WorldObject(); this.objects.set(data.id, object); }
+      return object;
+    });
     p.objects.forEach((data, i) => {
       const obj = objects[i]!;
-      if (data.matrix) { obj.node = new SceneNode(); obj.node.worldBlock.set(data.matrix); }
-      let previous: MeshBlock | null = null;
-      for (const source of data.blocks) {
-        const block = Object.assign(new MeshBlock(), source.values);
-        for (let v = 0; v < block.vertexCount; v++) {
-          const values = Object.fromEntries(vertexKeys.map((key, k) => [key, source.vertices.data[v * vertexKeys.length + k]!]));
-          block.vertices.push(Object.assign(new MeshVertex(), values));
-        }
-        block.polygons = source.polygons.map(poly => Object.assign(new MeshPolygon(), poly.values,
-          { indices: [...poly.indices], owner: poly.owner === null ? null : objects[poly.owner]! }));
-        if (previous) previous.next = block; else obj.meshList = block;
-        previous = block;
+      const old = previous.get(data.id);
+      if (!old || !sameGeometry(old, data)) {
+        this.renderer.forgetObject(obj); obj.meshList = null;
       }
+      Object.assign(obj, data.values); obj.currentMesh = null;
+      if (data.matrix) { obj.node ??= new SceneNode(); obj.node.worldBlock.set(data.matrix); }
+      else obj.node = null;
+      let previousBlock: MeshBlock | null = null, existing = obj.meshList;
+      for (const source of data.blocks) {
+        const block = existing ?? new MeshBlock(); existing = block.next;
+        Object.assign(block, source.values);
+        for (let v = 0; v < block.vertexCount; v++) {
+          const vertex = block.vertices[v] ?? new MeshVertex();
+          for (let k = 0; k < vertexKeys.length; k++) {
+            (vertex as unknown as Numbers)[vertexKeys[k]!] = source.vertices.data[v * vertexKeys.length + k]!;
+          }
+          vertex.clipRecord = null; block.vertices[v] = vertex;
+        }
+        block.vertices.length = block.vertexCount;
+        source.polygons.forEach((poly, j) => {
+          const target = block.polygons[j] ?? new MeshPolygon();
+          Object.assign(target, poly.values);
+          target.indices.length = poly.indices.length;
+          for (let k = 0; k < poly.indices.length; k++) target.indices[k] = poly.indices[k]!;
+          target.owner = poly.owner === null ? null : objects[poly.owner]!;
+          block.polygons[j] = target;
+        });
+        block.polygons.length = source.polygons.length;
+        if (previousBlock) previousBlock.next = block; else obj.meshList = block;
+        previousBlock = block;
+      }
+      if (previousBlock) previousBlock.next = null;
     });
     const tree = (ids: number[]): SceneNode | null => {
       let first: SceneNode | null = null, last: SceneNode | null = null;
@@ -141,12 +236,9 @@ export class WorldStateRenderer {
       return first ? root : null;
     };
     this.source = { world: p.world.map(id => objects[id]!), backdrop: tree(p.backdrop), cockpit: tree(p.cockpit) };
-    this.viewer = Object.assign(new Viewer(), p.viewer.values);
+    Object.assign(this.viewer, p.viewer.values);
     this.viewer.rotation.set(p.viewer.rotation); this.viewer.lightPos.set(p.viewer.lightPos);
-    this.resources = new ReferenceScene(p.resources);
-    this.camera = this.resources.camera;
-    const carrier = this.resources.world.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
-    this.renderer = new SceneRenderer(carrier.material.uniforms as IndexedUniforms);
+    this.packet = p;
   }
 
   /** Legacy pure drawing helpers still use module-local scratch/config globals.
@@ -179,6 +271,6 @@ export class WorldStateRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.renderer.destroy(); this.resources.dispose();
+    this.renderer.destroy(); this.resources.dispose(); this.objects.clear();
   }
 }

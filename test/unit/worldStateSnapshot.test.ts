@@ -9,6 +9,7 @@ import { renderView } from '../../src/render/pipeline/viewLatch.ts';
 import { makeUniforms } from '../../src/render/materials/indexedMaterial.ts';
 import { encodeWorldState, WorldStateRenderer } from '../../src/render/snapshot/worldState.ts';
 import type { SceneInput } from '../../src/render/SceneRenderer.ts';
+import * as THREE from 'three';
 
 let restore: () => void;
 beforeEach(() => {
@@ -83,4 +84,88 @@ it('rejects a map snapshot instead of reading uncaptured radar and allegiance st
   const { viewer, uniforms } = fixture();
   renderOptions.polygonDrawHook = HOOK.mapPolygonColour;
   expect(() => encodeWorldState(viewer, uniforms)).toThrow('main perspective');
+});
+
+it('reuses object/LOD/texture identities across reordered lists and state changes', () => {
+  const { object, viewer, uniforms } = fixture();
+  const other = new WorldObject(); other.posX = 321; object.listNext = other;
+  const consumer = new WorldStateRenderer(encodeWorldState(viewer, uniforms));
+  let copied: SceneInput | undefined;
+  vi.spyOn(consumer.renderer, 'sync').mockImplementation((_view, scene) => { copied = scene; });
+  consumer.sync();
+  const [original, second] = [...copied!.world];
+  const mesh = original!.meshList, vertex = mesh!.vertices[0], polygon = mesh!.polygons[0];
+  const palette = consumer.renderer.uniforms.uPalette.value;
+  const atlas = consumer.renderer.uniforms.uAtlas.value;
+  const atlasVersion = atlas.version;
+  const evict = vi.spyOn(consumer.renderer, 'forgetObject');
+  object.posX = 500; object.node!.worldBlock[9] = 400;
+  object.meshList!.polygons[0]!.normalX = 456;
+  other.listNext = object; object.listNext = null; worldRootNode.listNext = other;
+  (uniforms.uPalette.value.image.data as Uint8Array)[0] = 123;
+  consumer.apply(encodeWorldState(viewer, uniforms)); consumer.sync();
+  expect([...copied!.world]).toEqual([second, original]);
+  expect(original!.posX).toBe(500); expect(original!.node!.worldBlock[9]).toBe(400);
+  expect(original!.meshList).toBe(mesh); expect(mesh!.vertices[0]).toBe(vertex);
+  expect(mesh!.polygons[0]).toBe(polygon); expect(polygon!.normalX).toBe(456);
+  expect(polygon!.owner).toBe(original);
+  expect(consumer.renderer.uniforms.uPalette.value).toBe(palette);
+  expect(palette.image.data![0]).toBe(123);
+  expect(atlas.version).toBe(atlasVersion);
+  expect(evict).not.toHaveBeenCalled();
+  consumer.dispose();
+});
+
+it('invalidates geometry edits, retires deleted objects and handles reappearance', () => {
+  const { object, viewer, uniforms } = fixture();
+  const consumer = new WorldStateRenderer(encodeWorldState(viewer, uniforms));
+  let copied: SceneInput | undefined;
+  vi.spyOn(consumer.renderer, 'sync').mockImplementation((_view, scene) => { copied = scene; });
+  consumer.sync(); const original = [...copied!.world][0]!;
+  const mesh = original.meshList;
+  const evict = vi.spyOn(consumer.renderer, 'forgetObject');
+  object.meshList!.vertices[0]!.modelX = 999;
+  object.meshList!.polygons[0]!.indices.reverse();
+  consumer.apply(encodeWorldState(viewer, uniforms));
+  expect(evict).toHaveBeenCalledWith(original);
+  expect(original.meshList).not.toBe(mesh);
+  expect(original.meshList!.vertices[0]!.modelX).toBe(999);
+  const edited = original.meshList;
+  object.meshList!.polygonCount = 0; // inactive records may still occupy storage
+  consumer.apply(encodeWorldState(viewer, uniforms));
+  expect(original.meshList).not.toBe(edited);
+  worldRootNode.listNext = null;
+  evict.mockClear(); consumer.apply(encodeWorldState(viewer, uniforms)); consumer.sync();
+  expect([...copied!.world]).toHaveLength(0);
+  expect(evict).toHaveBeenCalledExactlyOnceWith(original);
+  worldRootNode.listNext = object;
+  consumer.apply(encodeWorldState(viewer, uniforms)); consumer.sync();
+  expect([...copied!.world][0]).not.toBe(original);
+  consumer.dispose();
+  expect(() => consumer.apply(encodeWorldState(viewer, uniforms))).toThrow('Disposed');
+});
+
+it('reallocates changed texture storage while preserving the shared uniform holder', () => {
+  const { viewer, uniforms } = fixture();
+  const consumer = new WorldStateRenderer(encodeWorldState(viewer, uniforms));
+  const holder = consumer.renderer.uniforms.uAtlas, texture = holder.value;
+  const disposed = vi.fn(); texture.addEventListener('dispose', disposed);
+  const next = new THREE.DataTexture(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]), 8, 1, THREE.RedFormat);
+  uniforms.uAtlas.value = next;
+  consumer.apply(encodeWorldState(viewer, uniforms));
+  expect(holder.value).toBe(texture); expect(texture.image.width).toBe(8);
+  expect([...texture.image.data as Uint8Array]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(disposed).toHaveBeenCalledTimes(1);
+  consumer.dispose(); expect(disposed).toHaveBeenCalledTimes(2);
+});
+
+it('retires cockpit cache entries even when the object remains in the world', () => {
+  const { object, viewer, uniforms } = fixture();
+  viewScene.cockpitHeadNode = new SceneNode(); viewScene.cockpitHeadNode.userData = object;
+  const consumer = new WorldStateRenderer(encodeWorldState(viewer, uniforms));
+  const evict = vi.spyOn(consumer.renderer, 'forgetObject');
+  viewScene.cockpitHeadNode = null;
+  consumer.apply(encodeWorldState(viewer, uniforms));
+  expect(evict).toHaveBeenCalledTimes(1);
+  consumer.dispose();
 });

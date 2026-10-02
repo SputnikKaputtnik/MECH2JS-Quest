@@ -266,6 +266,14 @@ export class SceneRenderer {
     this.byMesh.clear();
   }
 
+  /** Evict a removed or structurally changed snapshot object in both passes. */
+  forgetObject(object: WorldObject): void {
+    for (const entries of [this.entries, this.cockpitEntries]) {
+      const entry = entries.get(object);
+      if (entry) { this.dispose(entry); entries.delete(object); }
+    }
+  }
+
   destroy(): void {
     this.clear();
     this.material.dispose();
