@@ -138,3 +138,69 @@ simulation alone therefore does not solve frame pacing with this codec. The
 next production boundary must send versioned assets only when changed and
 compact binary dynamic state, avoiding full-scene capture/JSON/object traversal
 on every simulation step. The full codec remains the image-correctness oracle.
+
+
+## Compact binary presenter channel (2026-10-02)
+
+`CompactWorldEncoder` / `CompactWorldRenderer` retain the one-time full world
+basis, then carry numeric viewer/object state, stable draw-list IDs, versioned
+mesh definitions, indexed textures and owned HUD planes in a binary frame.
+There is no JSON parse or Three ObjectLoader on this frame path. Retained meshes
+are not visited vertex-by-vertex by adoption. Changed transforms invalidate the
+consumer's derived world coordinates; view-dependent preparation refreshes them.
+
+Each publication is independent of earlier publications: changed definitions
+repeat inline, while the consumer decodes each revision only once. The encoder
+retains the latest asset for each live object and removes retired objects; the
+consumer retains the fixed initial basis plus current live meshes. Texture
+revisions similarly skip repeated decoding/uploads. A revision is never reused
+after object retirement. The enclosing mailbox supplies epoch isolation and
+three bounded 16 MiB transfer slots. Texture sampler changes require a new basis
+and fail explicitly; maps, enhancement resources and shadow maps remain excluded.
+
+This is still a prototype: producer capture walks the world to discover changes
+and creates reference resource metadata. Revision comparison replaces full frame
+serialization but does not yet use mutation hooks or an asset-acknowledgement
+protocol. HUD planes are copied to consumer-owned storage; they are not yet
+integrated with the production VR HUD. Normal gameplay does not select this worker.
+
+Autonomous embedded-Quest tests:
+
+- `--compact-worker`: same six-second throttle/release and 600 ms stall protocol
+  as `--continuous-worker`, with the compact channel selected.
+- `--compact-combat`: twenty seconds, waits for the mech to power up, presses and
+  releases the mapped right trigger, requires actual player projectiles and
+  independent draws during the stall. The test initially exposed that the cold
+  mech suppresses fire before status 2; it now waits instead of altering the sim.
+- `--compact-snapshot`: 378 exact pixel comparisons across six mission phases,
+  yaw/pitch changes and mono/stereo views. Includes palette changes and discarded
+  publications. No live world roots are available while the snapshot prepares.
+- Unit regressions cover asset retention, reordered lists, dropped asset changes,
+  deletion/reappearance, births, baked vertices, texture resizing, HUD/texture
+  ownership after buffer reuse, sampler rejection and malformed frames.
+
+The final paired short runs used the same runtime, mission and input schedule.
+They are wall-clock-driven runs, not identical recorded simulation states:
+
+| Stage (CPU milliseconds) | Reference mean / p95 | Compact mean / p95 |
+| --- | ---: | ---: |
+| Simulation | 2.02 / 3.30 | 2.24 / 3.30 |
+| Producer capture | 7.16 / 10.50 | 9.46 / 11.10 |
+| Producer encoding | 18.33 / 23.80 | 5.61 / 6.70 |
+| Presenter decoding + adoption | 43.66 / 58.30 | 2.54 / 3.40 |
+| Per-draw scene preparation | 1.26 / 2.00 | 1.27 / 2.10 |
+| Per-draw WebGL submission | 1.03 / 1.30 | 1.00 / 1.40 |
+
+The twenty-second firing run adopted 391 states, observed up to three concurrent
+player projectiles, and submitted 54 offscreen views during the 600 ms worker
+stall. Adoption mean/p95/max was 2.49/3.20/9.60 ms. Thus the 1–2 ms adoption target
+is not yet met consistently. Initial drawing also includes large shader/cache
+startup costs (submission maximum about 44 ms); sustained headroom must be
+verified separately. The short compact run adopted 111 states versus 107 in the
+reference run; no queue backlog or stop failure was observed.
+
+All these draws use a 320x240 offscreen target (image comparisons use 640x480).
+Submission time is CPU time, **not GPU time**. None of these figures establishes
+90 Hz XR presentation, native-resolution headroom, production cockpit integration
+or long-combat stability. Full immutable reference snapshots remain the correctness
+oracle; private raw reports remain outside the repository.

@@ -20,12 +20,16 @@ import { scrounge } from '../../src/sim/world/scrounge.ts';
 import { runScroungeSubmissionBenchmark } from './scroungeBenchmark.ts';
 import { encodeReferenceScene, ReferenceScene } from '../../src/render/snapshot/referenceScene.ts';
 import { captureWorldState, encodeWorldState, WorldStateRenderer, type WorldPacket } from '../../src/render/snapshot/worldState.ts';
-import { encodeReferencePacket, ResourcePacketEncoder, ResourcePacketDecoder } from '../../src/render/snapshot/referencePacket.ts';
+import { CompactWorldEncoder, CompactWorldRenderer } from '../../src/render/snapshot/compactWorld.ts';
+import { decodeReferencePacket, encodeReferencePacket, ResourcePacketEncoder, ResourcePacketDecoder } from '../../src/render/snapshot/referencePacket.ts';
 import { worldRootNode } from '../../src/engine/scene/objectLists.ts';
 import { viewScene } from '../../src/sim/world/viewScene.ts';
 
-export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrounge' | 'snapshot' | 'headSnapshot' | 'resourceSnapshot' = 'batch') {
-  const headVariant = variant === 'headSnapshot' || variant === 'resourceSnapshot';
+export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrounge' | 'snapshot' | 'headSnapshot' | 'resourceSnapshot' | 'compactSnapshot' = 'batch') {
+  const compactVariant = variant === 'compactSnapshot';
+  let compactEncoder: CompactWorldEncoder | undefined, compactRenderer: CompactWorldRenderer | undefined;
+  const compactBuffer = new ArrayBuffer(16 * 1024 * 1024);
+  const headVariant = compactVariant || variant === 'headSnapshot' || variant === 'resourceSnapshot';
   let resources: ResourcePacketEncoder | undefined, receiver: ResourcePacketDecoder | undefined;
   let resourceBasisBytes = 0, fullSnapshotBytes = 0;
   const data = await loadGameData(new FetchSource());
@@ -55,7 +59,7 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
   let headSnapshotBytes = 0;
   let resourceFrame: Uint8Array | undefined;
   try {
-    for (let phase = 0; phase < (variant === 'scrounge' || variant === 'resourceSnapshot' ? 6 : 3); phase++) {
+    for (let phase = 0; phase < (variant === 'scrounge' || variant === 'resourceSnapshot' || compactVariant ? 6 : 3); phase++) {
       if (variant === 'scrounge') renderOptions.wireframeMode = [0, 0, 1, 0, 2, 0][phase]!;
       for (let f = 0; f < 40; f++) {
         for (let t = 0; t < 9; t++) ailTimerService();
@@ -67,8 +71,24 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
       cameraFromViewer(viewer(), camera, 4 / 3);
       origin.copy(camera.position); baseRotation.copy(camera.quaternion);
       if (headVariant) {
-        if (variant !== 'resourceSnapshot') headSnapshot?.dispose();
-        if (variant === 'resourceSnapshot') {
+        if (variant !== 'resourceSnapshot' && !compactVariant) headSnapshot?.dispose();
+        if (compactVariant) {
+          if (phase > 0) {
+            const palette = sr.uniforms.uPalette.value.image.data as Uint8Array;
+            for (let i = 0; i < palette.length; i += 4) palette[i] = 255 - palette[i]!;
+            sr.uniforms.uPalette.value.needsUpdate = true;
+          }
+          const state = captureWorldState(viewer(), sr.uniforms);
+          if (!compactEncoder) {
+            compactEncoder = new CompactWorldEncoder(state, sr.uniforms);
+            const basis = encodeReferencePacket(state); resourceBasisBytes = basis.length;
+            compactRenderer = new CompactWorldRenderer(decodeReferencePacket(basis) as WorldPacket);
+          }
+          compactEncoder.write(state, sr.uniforms, compactBuffer); // dropped publication
+          headSnapshotBytes = compactEncoder.write(state, sr.uniforms, compactBuffer);
+          compactRenderer!.apply(new Uint8Array(compactBuffer, 0, headSnapshotBytes));
+          headSnapshot = compactRenderer!.scene;
+        } else if (variant === 'resourceSnapshot') {
           // Exercise a changed palette after the basis, including a discarded
           // publication of that exact update. A chain of frame deltas would fail.
           if (phase > 0) {

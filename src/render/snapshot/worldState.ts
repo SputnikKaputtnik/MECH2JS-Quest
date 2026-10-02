@@ -19,13 +19,13 @@ import { encodeReferencePacket, decodeReferencePacket } from './referencePacket.
 
 type Numbers = Record<string, number>;
 const numbers = (object: object): Numbers => Object.fromEntries(Object.entries(object).filter(([, v]) => typeof v === 'number'));
-const vertexKeys = Object.keys(numbers(new MeshVertex()));
+export const vertexKeys = Object.keys(numbers(new MeshVertex()));
 interface BlockData {
   values: Numbers;
   vertices: { type: 'Float64Array'; data: ArrayLike<number> };
   polygons: { values: Numbers; owner: number | null; indices: number[] }[];
 }
-interface ObjectData { id: number; values: Numbers; matrix: number[] | null; blocks: BlockData[] }
+export interface ObjectData { id: number; values: Numbers; matrix: number[] | null; blocks: BlockData[] }
 export interface WorldPacket {
   version: 3;
   objects: ObjectData[];
@@ -141,6 +141,8 @@ export class WorldStateRenderer {
   private packet: WorldPacket;
   private readonly cullViewer = new Viewer();
   private disposed = false;
+  private compact = false;
+  private compactCockpit = new Set<number>();
 
   /** Object input transfers ownership of already decoded snapshot data. */
   constructor(bytes: Uint8Array | WorldPacket) {
@@ -159,6 +161,7 @@ export class WorldStateRenderer {
    * only the affected object. Do not apply a different mission to this instance. */
   apply(bytes: Uint8Array | WorldPacket): void {
     if (this.disposed) throw Error('Disposed world snapshot');
+    if (this.compact) throw Error('Cannot mix full and compact adoption');
     const p = bytes instanceof Uint8Array ? decodeReferencePacket(bytes) as WorldPacket : bytes;
     if (p.version !== 3) throw Error('Unsupported world snapshot');
     const incoming = new ReferenceScene(p.resources);
@@ -168,6 +171,70 @@ export class WorldStateRenderer {
       this.camera.copy(incoming.camera);
     } finally { incoming.dispose(); }
     this.applyObjects(p);
+  }
+
+  /** Compact channel: numeric object state every frame, mesh data only on asset
+   * revision changes. Asset polygon owners use stable IDs, not list positions. */
+  adoptCompact(objects: { id: number; values: Numbers; matrix: number[] | null; asset?: ObjectData }[],
+    lists: { world: number[]; backdrop: number[]; cockpit: number[] },
+    state: Pick<WorldPacket, 'viewer' | 'options' | 'lighting' | 'cockpitActive' | 'sortFlags'>): void {
+    if (this.disposed) throw Error('Disposed world snapshot');
+    if (!this.compact) this.compactCockpit = new Set(this.packet.cockpit.map(i => this.packet.objects[i]!.id));
+    this.compact = true;
+    const ids = new Set(objects.map(o => o.id));
+    if (ids.size !== objects.length) throw Error('Duplicate compact object');
+    for (const [id, obj] of this.objects) if (!ids.has(id)) { this.renderer.forgetObject(obj); this.objects.delete(id); }
+    const cockpit = new Set(lists.cockpit);
+    for (const id of this.compactCockpit) if (!cockpit.has(id)) {
+      const obj = this.objects.get(id); if (obj) this.renderer.forgetObject(obj);
+    }
+    this.compactCockpit = cockpit;
+    const moved = new Set<number>();
+    for (const data of objects) {
+      let obj = this.objects.get(data.id);
+      if (!obj) { obj = new WorldObject(); this.objects.set(data.id, obj); }
+      if (data.asset || (data.matrix && (!obj.node || data.matrix.some((v, i) => v !== obj!.node!.worldBlock[i])))) moved.add(data.id);
+      Object.assign(obj, data.values); obj.currentMesh = null;
+      if (data.matrix) { obj.node ??= new SceneNode(); obj.node.worldBlock.set(data.matrix); }
+      else obj.node = null;
+    }
+    for (const data of objects) if (data.asset) {
+      const obj = this.objects.get(data.id)!;
+      this.renderer.forgetObject(obj); obj.meshList = null;
+      let previous: MeshBlock | null = null;
+      for (const source of data.asset.blocks) {
+        const block = Object.assign(new MeshBlock(), source.values);
+        for (let v = 0; v < block.vertexCount; v++) {
+          const vertex = new MeshVertex();
+          for (let k = 0; k < vertexKeys.length; k++) (vertex as unknown as Numbers)[vertexKeys[k]!] = source.vertices.data[v * vertexKeys.length + k]!;
+          block.vertices.push(vertex);
+        }
+        block.polygons = source.polygons.map(p => Object.assign(new MeshPolygon(), p.values,
+          { indices: [...p.indices], owner: p.owner === null ? null : this.objects.get(p.owner)! }));
+        if (previous) previous.next = block; else obj.meshList = block;
+        previous = block;
+      }
+    }
+    // The producer may have transformed a mesh before publishing. Its version
+    // alone cannot certify that our retained world coordinates are current.
+    for (const id of moved) {
+      const obj = this.objects.get(id)!;
+      if (obj.node) for (let block = obj.meshList; block; block = block.next) block.transformVersion = obj.transformVersion ^ 0x80000000;
+    }
+    const tree = (ids: number[]): SceneNode | null => {
+      const root = new SceneNode(); let last: SceneNode | null = null;
+      for (const id of ids) {
+        const node = new SceneNode(); node.userData = this.objects.get(id)!;
+        if (last) last.nextSibling = node; else root.firstChild = node;
+        last = node;
+      }
+      return root.firstChild ? root : null;
+    };
+    this.source = { world: lists.world.map(id => this.objects.get(id)!), backdrop: tree(lists.backdrop), cockpit: tree(lists.cockpit) };
+    Object.assign(this.packet, state);
+    Object.assign(this.viewer, state.viewer.values);
+    this.viewer.rotation.set(state.viewer.rotation); this.viewer.lightPos.set(state.viewer.lightPos);
+    cameraFromViewer(this.viewer, this.camera, 4 / 3);
   }
 
   private applyObjects(p: WorldPacket): void {

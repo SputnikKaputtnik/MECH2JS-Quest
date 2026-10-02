@@ -7,7 +7,9 @@ import { cameraGlobals } from '../../src/sim/camera/viewer.ts';
 import { lighting } from '../../src/sim/world/environment.ts';
 import { renderView } from '../../src/render/pipeline/viewLatch.ts';
 import { makeUniforms } from '../../src/render/materials/indexedMaterial.ts';
-import { encodeWorldState, WorldStateRenderer } from '../../src/render/snapshot/worldState.ts';
+import { CompactWorldEncoder, CompactWorldRenderer } from '../../src/render/snapshot/compactWorld.ts';
+import { decodeReferencePacket } from '../../src/render/snapshot/referencePacket.ts';
+import { captureWorldState, encodeWorldState, WorldStateRenderer, type WorldPacket } from '../../src/render/snapshot/worldState.ts';
 import type { SceneInput } from '../../src/render/SceneRenderer.ts';
 import * as THREE from 'three';
 
@@ -167,5 +169,89 @@ it('retires cockpit cache entries even when the object remains in the world', ()
   viewScene.cockpitHeadNode = null;
   consumer.apply(encodeWorldState(viewer, uniforms));
   expect(evict).toHaveBeenCalledTimes(1);
+  consumer.dispose();
+});
+
+
+it('compact frames retain assets through movement, reorder, dropped edits and resurrection', () => {
+  const { object, viewer, uniforms } = fixture();
+  const other = new WorldObject(); object.listNext = other;
+  const initial = captureWorldState(viewer, uniforms);
+  const encoder = new CompactWorldEncoder(initial, uniforms);
+  const consumer = new CompactWorldRenderer(decodeReferencePacket(encodeWorldState(viewer, uniforms)) as WorldPacket);
+  const buffer = new ArrayBuffer(1024 * 1024);
+  const publish = (apply = true) => {
+    const size = encoder.write(captureWorldState(viewer, uniforms), uniforms, buffer);
+    if (apply) consumer.apply(new Uint8Array(buffer, 0, size));
+    return size;
+  };
+  let source: SceneInput | undefined;
+  vi.spyOn(consumer.scene.renderer, 'sync').mockImplementation((_view, scene) => { source = scene; });
+  consumer.scene.sync(); const [first, second] = [...source!.world];
+  const mesh = first!.meshList, vertex = mesh!.vertices[0];
+  const baselineBytes = publish(); expect(consumer.stats.decodedAssets).toBe(0);
+  object.node!.worldBlock[9] = 1000;
+  other.listNext = object; object.listNext = null; worldRootNode.listNext = other;
+  publish(); consumer.scene.sync();
+  expect([...source!.world]).toEqual([second, first]);
+  expect(first!.meshList).toBe(mesh); expect(mesh!.vertices[0]).toBe(vertex);
+  expect(first!.node!.worldBlock[9]).toBe(1000);
+  expect(mesh!.transformVersion).not.toBe(first!.transformVersion);
+  expect(consumer.stats.decodedAssets).toBe(0);
+  object.meshList!.vertices[0]!.modelX = 900;
+  publish(false); expect(publish()).toBeGreaterThan(baselineBytes);
+  expect(first!.meshList!.vertices[0]!.modelX).toBe(900);
+  expect(first!.meshList!.polygons[0]!.owner).toBe(first);
+  const changed = first!.meshList; publish();
+  expect(first!.meshList).toBe(changed); expect(consumer.stats.decodedAssets).toBe(1);
+  other.listNext = null; publish(); consumer.scene.sync(); expect([...source!.world]).toHaveLength(1);
+  other.listNext = object; publish(); consumer.scene.sync();
+  const restored = [...source!.world][1]!;
+  expect(restored).not.toBe(first); expect(restored.meshList!.vertices[0]!.modelX).toBe(900);
+  expect(restored.meshList!.polygons[0]!.owner).toBe(restored);
+  new Uint8Array(buffer).fill(0); expect(restored.meshList!.vertices[0]!.modelX).toBe(900);
+  consumer.dispose();
+});
+
+it('compact textures and HUD own recycled bytes, repeat dropped changes and reject sampler changes', () => {
+  const { viewer, uniforms } = fixture();
+  const encoder = new CompactWorldEncoder(captureWorldState(viewer, uniforms), uniforms);
+  const consumer = new CompactWorldRenderer(decodeReferencePacket(encodeWorldState(viewer, uniforms)) as WorldPacket);
+  const buffer = new ArrayBuffer(1024 * 1024);
+  const texture = uniforms.uPalette.value, output = consumer.scene.renderer.uniforms.uPalette.value;
+  (texture.image.data as Uint8Array)[0] = 77;
+  const aux = { width: 2, height: 1, planes: Array.from({ length: 4 }, () => new Uint8Array([7, 8])), menuOpen: true, throttlePlus: 1 };
+  const write = () => encoder.write(captureWorldState(viewer, uniforms), uniforms, buffer, aux);
+  write(); const size = write(); consumer.apply(new Uint8Array(buffer, 0, size));
+  expect(output.image.data![0]).toBe(77); expect(consumer.aux.menuOpen).toBe(true);
+  const version = output.version; consumer.apply(new Uint8Array(buffer, 0, size)); expect(output.version).toBe(version);
+  new Uint8Array(buffer).fill(0); expect(consumer.aux.planes[0]).toEqual(new Uint8Array([7, 8])); expect(output.image.data![0]).toBe(77);
+  texture.image = { width: 1, height: 1, data: new Uint8Array([1, 2, 3, 4]) };
+  consumer.apply(new Uint8Array(buffer, 0, write())); expect(output.image.width).toBe(1); expect(output.image.data).toEqual(new Uint8Array([1, 2, 3, 4]));
+  texture.flipY = !texture.flipY; expect(write).toThrow('sampler changed');
+  consumer.dispose();
+});
+
+
+it('compact channel updates baked geometry and rejects malformed frames', () => {
+  const { object, viewer, uniforms } = fixture(); object.node = null;
+  const encoder = new CompactWorldEncoder(captureWorldState(viewer, uniforms), uniforms);
+  const consumer = new CompactWorldRenderer(decodeReferencePacket(encodeWorldState(viewer, uniforms)) as WorldPacket);
+  const buffer = new ArrayBuffer(1024 * 1024);
+  object.meshList!.vertices[0]!.worldX = 333;
+  const size = encoder.write(captureWorldState(viewer, uniforms), uniforms, buffer);
+  consumer.apply(new Uint8Array(buffer, 0, size));
+  let source: SceneInput | undefined;
+  vi.spyOn(consumer.scene.renderer, 'sync').mockImplementation((_view, scene) => { source = scene; });
+  consumer.scene.sync();
+  expect([...source!.world][0]!.meshList!.vertices[0]!.worldX).toBe(333);
+  expect(consumer.stats.decodedAssets).toBe(1);
+  expect(() => consumer.apply(new Uint8Array(buffer, 0, 24))).toThrow('Truncated');
+  expect(() => consumer.apply(new Uint8Array(buffer, 0, size - 1))).toThrow('Truncated');
+  const invalid = new Uint8Array(buffer, 0, size).slice(); invalid.fill(0, 0, 8);
+  expect(() => consumer.apply(invalid)).toThrow('header');
+  const added = new WorldObject(); added.node = new SceneNode(); object.listNext = added;
+  consumer.apply(new Uint8Array(buffer, 0, encoder.write(captureWorldState(viewer, uniforms), uniforms, buffer)));
+  consumer.scene.sync(); expect([...source!.world]).toHaveLength(2);
   consumer.dispose();
 });

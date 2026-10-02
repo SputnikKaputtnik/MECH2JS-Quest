@@ -10,6 +10,7 @@
   import { runSceneWorkerProbe } from './sceneWorkerProbe.ts';
   import { runContinuousWorkerProbe } from './continuousWorkerProbe.ts';
   window.runQuestContinuousWorkerTests = runContinuousWorkerProbe;
+  window.runQuestCompactSnapshotTests = async () => ({ kind: 'compact-snapshot-image-regression', xr: false, world: await runWorldBatchComparison('compactSnapshot') });
   window.runQuestResourceSnapshotTests = async () => {
     const world = await runWorldBatchComparison('resourceSnapshot');
     const worker = await runSceneWorkerProbe(true, true);

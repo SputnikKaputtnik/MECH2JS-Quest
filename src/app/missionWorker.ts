@@ -14,7 +14,8 @@ import { SnapshotProducer, type SnapshotRelease } from '../engine/snapshotMailbo
 import { BitmapAtlas } from '../render/textures/bitmapAtlas.ts';
 import { makeUniforms, setPalette, setLuma, type IndexedUniforms } from '../render/materials/indexedMaterial.ts';
 import { captureWorldState, type WorldPacket } from '../render/snapshot/worldState.ts';
-import { ResourcePacketEncoder } from '../render/snapshot/referencePacket.ts';
+import { CompactWorldEncoder } from '../render/snapshot/compactWorld.ts';
+import { encodeReferencePacket, ResourcePacketEncoder } from '../render/snapshot/referencePacket.ts';
 import { viewer } from '../sim/camera/viewer.ts';
 import { palettes } from '../sim/world/palettes.ts';
 import { lighting } from '../sim/world/environment.ts';
@@ -24,6 +25,7 @@ import { defaultCanvas } from '../sim/display/video.ts';
 import { ui } from '../sim/ui/uiContext.ts';
 import { sendKey, releaseSentKeys, setMouseStick } from './hostInput.ts';
 import type { WorkerControls } from './workerControls.ts';
+import { simTables } from '../sim/effects/simTables.ts';
 import { mechs } from '../sim/mech/mechGlobals.ts';
 
 type Pixels = { type: 'Uint8Array'; data: ArrayLike<number> };
@@ -35,9 +37,9 @@ export interface MissionPacket {
 }
 export interface MissionMeta {
   bytes: number; frame: number; simTick: number; simMs: number; captureMs: number; encodeMs: number;
-  controls: number; published: number; skipped: number;
+  playerStatus: number; playerProjectiles: number; weaponFire: number; controls: number; published: number; skipped: number;
 }
-type Request = SnapshotRelease | WorkerControls | { kind: 'start'; epoch: string; origin: string }
+type Request = SnapshotRelease | WorkerControls | { kind: 'start'; epoch: string; origin: string; compact?: boolean }
   | { kind: 'stop'; epoch: string } | { kind: 'stall'; epoch: string; ms: number };
 const port = globalThis as unknown as { postMessage(message: unknown, transfers?: ArrayBuffer[]): void; onmessage: ((event: MessageEvent<Request>) => void) | null };
 let epoch = '', closed = false, started = false;
@@ -59,7 +61,7 @@ function capture(): MissionPacket {
       buffer: pixels(defaultCanvas.buffer), drawn: pixels(defaultCanvas.drawn), layer: pixels(defaultCanvas.layer), inset: pixels(defaultCanvas.inset) } };
 }
 
-async function start(origin: string) {
+async function start(origin: string, compact = false) {
   const data = await loadGameData(new FetchSource(`${origin}/mw2/`));
   if (closed) return;
   setDosFiles(data.loose); seedControlFiles(data.shellExe);
@@ -71,8 +73,10 @@ async function start(origin: string) {
   const luma = cacheLoadResource(lighting.lumaTableId, 'LUMA');
   if (luma) setLuma(uniforms, parseLuma(luma).rows);
   atlas.updateSlots(uniforms);
-  const encoder = new ResourcePacketEncoder(epoch, capture());
-  port.postMessage({ kind: 'resource-basis', epoch, bytes: encoder.initial }, [encoder.initial.buffer as ArrayBuffer]);
+  const initial = capture();
+  const encoder = compact ? new CompactWorldEncoder(initial.world, uniforms) : new ResourcePacketEncoder(epoch, initial);
+  const basis = encoder instanceof CompactWorldEncoder ? encodeReferencePacket(initial.world) : encoder.initial;
+  port.postMessage({ kind: compact ? 'compact-basis' : 'resource-basis', epoch, bytes: basis }, [basis.buffer as ArrayBuffer]);
   // Fixed maximum, three slots. Oversize scenes fail explicitly, never truncate.
   const capacity = 16 * 1024 * 1024;
   producer = new SnapshotProducer(epoch, capacity, (m, transfer) => port.postMessage(m, transfer));
@@ -91,13 +95,21 @@ async function start(origin: string) {
         if (!mainLoopRunning()) { stop(); port.postMessage({ kind: 'ended', epoch }); return; }
         atlas.updateSlots(uniforms!); setPalette(uniforms!, palettes.dac);
         const meta: MissionMeta = { bytes: 0, frame: mainLoop.frameCount, simTick: clock.simTick,
-          simMs, captureMs: 0, encodeMs: 0, controls, published: producer!.stats.published, skipped: producer!.stats.skipped };
+          simMs, captureMs: 0, encodeMs: 0, playerStatus: mechs.mechTable[mechs.playerMechIndex]?.loadout?.status ?? -1,
+          playerProjectiles: simTables.projectiles.filter(p => p.active && p.attackerMechIndex === mechs.playerMechIndex).length,
+          weaponFire: mechs.playerControls.weapon_fire | mechs.playerControls.weapon_fire_group, controls, published: producer!.stats.published, skipped: producer!.stats.skipped };
         producer!.publish(meta, buffer => {
           const begin = performance.now(), state = capture(), encodedAt = performance.now();
-          const bytes = encoder.encode(state);
-          meta.captureMs = encodedAt - begin; meta.encodeMs = performance.now() - encodedAt; meta.bytes = bytes.length;
-          if (bytes.length > buffer.byteLength) throw Error('Mission snapshot exceeds transport capacity');
-          new Uint8Array(buffer, 0, bytes.length).set(bytes);
+          if (encoder instanceof CompactWorldEncoder) {
+            meta.bytes = encoder.write(state.world, uniforms!, buffer, { width: state.hud.width, height: state.hud.height,
+              planes: [defaultCanvas.buffer, defaultCanvas.drawn, defaultCanvas.layer, defaultCanvas.inset],
+              menuOpen: state.menuOpen, throttlePlus: state.throttlePlus });
+          } else {
+            const bytes = encoder.encode(state); meta.bytes = bytes.length;
+            if (bytes.length > buffer.byteLength) throw Error('Mission snapshot exceeds transport capacity');
+            new Uint8Array(buffer, 0, bytes.length).set(bytes);
+          }
+          meta.captureMs = encodedAt - begin; meta.encodeMs = performance.now() - encodedAt;
         });
       }
       timer = setTimeout(pump, 5);
@@ -110,7 +122,7 @@ port.onmessage = ({ data: m }) => {
   try {
     if (m.kind === 'start') {
       if (started) throw Error('Mission worker must be recreated for each epoch');
-      started = true; epoch = m.epoch; void start(m.origin).catch(fail); return;
+      started = true; epoch = m.epoch; void start(m.origin, m.compact).catch(fail); return;
     }
     if (m.epoch !== epoch || closed) return;
     if (m.kind === 'snapshot-release') producer?.release(m);
