@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { SnapshotConsumer } from '../../src/engine/snapshotMailbox.ts';
 import { ReferenceScene } from '../../src/render/snapshot/referenceScene.ts';
-import { WorldStateRenderer } from '../../src/render/snapshot/worldState.ts';
+import { WorldStateRenderer, type WorldPacket } from '../../src/render/snapshot/worldState.ts';
+import { ResourcePacketDecoder } from '../../src/render/snapshot/referencePacket.ts';
 
 /** Offscreen drawing on the actual device GPU while the worker is CPU-blocked.
  * This is not XR frame pacing or a measurement of production transport cost. */
-export async function runSceneWorkerProbe(unculled = false) {
+export async function runSceneWorkerProbe(unculled = false, resources = false) {
   const worker = new Worker(new URL('./referenceSnapshotWorker.ts', import.meta.url), { type: 'module' });
-  const mailbox = new SnapshotConsumer<{ bytes: number; unculled: boolean }>('scene-probe', (m, transfer) => worker.postMessage(m, transfer));
+  const mailbox = new SnapshotConsumer<{ bytes: number; unculled: boolean; resources: boolean; final: boolean; fullBytes: number }>('scene-probe', (m, transfer) => worker.postMessage(m, transfer));
+  let decoder: ResourcePacketDecoder | undefined;
+  let basisBytes = 0, fullBytes = 0, received = 0;
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setSize(320, 240);
   const target = new THREE.WebGLRenderTarget(320, 240);
@@ -26,11 +29,18 @@ export async function runSceneWorkerProbe(unculled = false) {
         const m = event.data;
         try {
           if (m.kind === 'error') throw Error(m.message);
-          if (m.kind === 'snapshot') {
+          if (m.kind === 'resource-basis') {
+            basisBytes = m.bytes.byteLength;
+            decoder = new ResourcePacketDecoder('scene-probe', m.bytes);
+          } else if (m.kind === 'snapshot') {
+            received++;
             mailbox.receive(m);
+            if (!m.meta.final) return; // let the mailbox discard earlier updates
             const packet = mailbox.acquire()!;
             bytes = packet.meta.bytes;
-            scene = packet.meta.unculled ? new WorldStateRenderer(new Uint8Array(packet.buffer, 0, bytes))
+            fullBytes = packet.meta.fullBytes;
+            scene = packet.meta.resources ? new WorldStateRenderer(decoder!.decode(new Uint8Array(packet.buffer, 0, bytes)) as WorldPacket)
+              : packet.meta.unculled ? new WorldStateRenderer(new Uint8Array(packet.buffer, 0, bytes))
               : new ReferenceScene(new Uint8Array(packet.buffer, 0, bytes));
             baseRotation.copy(scene.camera.quaternion);
             mailbox.close(); // recycle immediately: renderer must own all pixels/vertices
@@ -57,13 +67,14 @@ export async function runSceneWorkerProbe(unculled = false) {
             const during = draws.filter(t => t >= m.start && t < m.end);
             if (during.length < 3) throw Error(`No independent drawing during stall: ${during.length}`);
             resolve({ kind: 'offscreen-worker-scene', xr: false, unculled, snapshotBytes: bytes, visiblePixels,
+              resources, basisBytes, fullBytes, discardedSnapshots: received - 1,
               producerStallMs: m.end - m.start, consumerDrawsDuringStall: during.length,
               sourceDisposedBeforeStall: true, note: unculled ? 'Consumer rotates through a full turn during the worker stall; offscreen submissions, not XR/display FPS.'
                 : 'Fixed-view reference scene; no head-turn completeness, gameplay, XR or FPS claim.' });
           }
         } catch (error) { reject(error); }
       };
-      worker.postMessage({ kind: 'init', origin: location.origin, unculled });
+      worker.postMessage({ kind: 'init', origin: location.origin, unculled, resources });
     });
   } finally {
     clearTimeout(timeout); clearInterval(timer);

@@ -12,7 +12,8 @@ const adb = process.env.ADB ?? (process.platform === 'win32' && fs.existsSync('C
   ? 'C:/Android/Sdk/platform-tools/adb.exe' : 'adb');
 const output = process.argv[2];
 const headSnapshot = process.argv[3] === '--head-snapshot';
-const snapshotOnly = process.argv[3] === '--snapshot' || headSnapshot;
+const resourceSnapshot = process.argv[3] === '--resource-snapshot';
+const snapshotOnly = process.argv[3] === '--snapshot' || headSnapshot || resourceSnapshot;
 const socketName = process.env.QUEST_CDP_SOCKET ?? 'chrome_devtools_remote';
 if (!['chrome_devtools_remote', 'content_shell_devtools_remote'].includes(socketName)) throw Error('Unsupported Quest runtime socket');
 if (!output) throw Error('Usage: node tools/quest-test.mjs <private-report.json>');
@@ -95,7 +96,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   const result = await page.call('Runtime.evaluate', {
-    expression: headSnapshot ? 'window.runQuestHeadSnapshotTests()' : snapshotOnly ? 'window.runQuestSnapshotTests()' : 'window.runQuestTests()', awaitPromise: true, returnByValue: true,
+    expression: resourceSnapshot ? 'window.runQuestResourceSnapshotTests()' : headSnapshot ? 'window.runQuestHeadSnapshotTests()' : snapshotOnly ? 'window.runQuestSnapshotTests()' : 'window.runQuestTests()', awaitPromise: true, returnByValue: true,
   });
   if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails));
   const report = { recordedAt: new Date().toISOString(), model: device('shell', 'getprop', 'ro.product.model'), runtimeSocket: socketName, ...result.result.value };

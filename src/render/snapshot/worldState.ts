@@ -13,7 +13,7 @@ import { SceneRenderer, type SceneInput } from '../SceneRenderer.ts';
 import { makeIndexedMaterial, type IndexedUniforms } from '../materials/indexedMaterial.ts';
 import { cameraFromViewer, viewerFromCamera } from '../bridge/cameraViewer.ts';
 import { renderView } from '../pipeline/viewLatch.ts';
-import { encodeReferenceScene, ReferenceScene } from './referenceScene.ts';
+import { captureReferenceScene, ReferenceScene, type ReferenceScenePacket } from './referenceScene.ts';
 import { encodeReferencePacket, decodeReferencePacket } from './referencePacket.ts';
 
 type Numbers = Record<string, number>;
@@ -25,8 +25,8 @@ interface BlockData {
   polygons: { values: Numbers; owner: number | null; indices: number[] }[];
 }
 interface ObjectData { values: Numbers; matrix: number[] | null; blocks: BlockData[] }
-interface WorldPacket {
-  version: 1;
+export interface WorldPacket {
+  version: 2;
   objects: ObjectData[];
   world: number[];
   backdrop: number[];
@@ -35,7 +35,7 @@ interface WorldPacket {
   options: typeof renderOptions;
   lighting: { lightDimDistance: number; damageShadeRaises: number };
   viewer: { values: Numbers; rotation: number[]; lightPos: number[] };
-  resources: { type: 'Uint8Array'; data: ArrayLike<number> };
+  resources: ReferenceScenePacket;
   sortFlags: number;
 }
 
@@ -50,6 +50,12 @@ function treeObjects(root: SceneNode | null): WorldObject[] {
 }
 
 export function encodeWorldState(viewer: Viewer, uniforms: IndexedUniforms): Uint8Array {
+  return encodeReferencePacket(captureWorldState(viewer, uniforms));
+}
+
+/** Capture intermediate for full or resource-based encoding. No live engine
+ * pointers are kept. Encode before handing ownership to another thread. */
+export function captureWorldState(viewer: Viewer, uniforms: IndexedUniforms): WorldPacket {
   if (renderOptions.objectCullHook !== HOOK.objectCullMainView || renderOptions.polygonDrawHook !== HOOK.polygonResolveColour ||
       renderOptions.polygonFillHook !== HOOK.polyFillByMode || renderOptions.clipProjectHook !== HOOK.clipProjectPerspective) {
     throw Error('Unculled snapshot supports only the main perspective render hooks');
@@ -80,17 +86,17 @@ export function encodeWorldState(viewer: Viewer, uniforms: IndexedUniforms): Uin
   const carrier = new THREE.Mesh(new THREE.BufferGeometry(), makeIndexedMaterial(uniforms));
   const resourceWorld = new THREE.Scene(); resourceWorld.add(carrier);
   const camera = new THREE.PerspectiveCamera(); cameraFromViewer(viewer, camera, 4 / 3);
-  let resourceBytes: Uint8Array;
+  let resources: ReferenceScenePacket;
   try {
-    resourceBytes = encodeReferenceScene({ world: resourceWorld, backdrop: new THREE.Scene(), cockpit: new THREE.Scene(), camera });
+    resources = captureReferenceScene({ world: resourceWorld, backdrop: new THREE.Scene(), cockpit: new THREE.Scene(), camera });
   } finally { carrier.geometry.dispose(); carrier.material.dispose(); }
   const packet: WorldPacket = {
-    version: 1, objects: records, world, backdrop, cockpit, cockpitActive: cameraGlobals.cockpitViewActive,
+    version: 2, objects: records, world, backdrop, cockpit, cockpitActive: cameraGlobals.cockpitViewActive,
     options: { ...renderOptions }, lighting: { lightDimDistance: lighting.lightDimDistance, damageShadeRaises: lighting.damageShadeRaises },
     viewer: { values: numbers(viewer), rotation: [...viewer.rotation], lightPos: [...viewer.lightPos] },
-    resources: { type: 'Uint8Array', data: Array.from(resourceBytes) }, sortFlags: renderView.polySortFlags,
+    resources, sortFlags: renderView.polySortFlags,
   };
-  return encodeReferencePacket(packet);
+  return packet;
 }
 
 export class WorldStateRenderer {
@@ -103,9 +109,10 @@ export class WorldStateRenderer {
   private readonly cullViewer = new Viewer();
   private disposed = false;
 
-  constructor(bytes: Uint8Array) {
-    const p = this.packet = decodeReferencePacket(bytes) as WorldPacket;
-    if (p.version !== 1) throw Error('Unsupported world snapshot');
+  /** Object input transfers ownership of already decoded snapshot data. */
+  constructor(bytes: Uint8Array | WorldPacket) {
+    const p = this.packet = bytes instanceof Uint8Array ? decodeReferencePacket(bytes) as WorldPacket : bytes;
+    if (p.version !== 2) throw Error('Unsupported world snapshot');
     const objects = p.objects.map(data => Object.assign(new WorldObject(), data.values));
     p.objects.forEach((data, i) => {
       const obj = objects[i]!;
@@ -136,7 +143,7 @@ export class WorldStateRenderer {
     this.source = { world: p.world.map(id => objects[id]!), backdrop: tree(p.backdrop), cockpit: tree(p.cockpit) };
     this.viewer = Object.assign(new Viewer(), p.viewer.values);
     this.viewer.rotation.set(p.viewer.rotation); this.viewer.lightPos.set(p.viewer.lightPos);
-    this.resources = new ReferenceScene(Uint8Array.from(p.resources.data));
+    this.resources = new ReferenceScene(p.resources);
     this.camera = this.resources.camera;
     const carrier = this.resources.world.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
     this.renderer = new SceneRenderer(carrier.material.uniforms as IndexedUniforms);

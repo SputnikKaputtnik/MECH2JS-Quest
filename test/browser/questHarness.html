@@ -8,6 +8,13 @@
 <script type="module">
   import { runWorldBatchComparison } from './worldBatch.ts';
   import { runSceneWorkerProbe } from './sceneWorkerProbe.ts';
+  window.runQuestResourceSnapshotTests = async () => {
+    const world = await runWorldBatchComparison('resourceSnapshot');
+    const worker = await runSceneWorkerProbe(true, true);
+    return { kind: 'resource-snapshot-drop-regression', xr: false,
+      userAgent: navigator.userAgent, world, worker,
+      note: 'Fixed resource basis plus independent frames; skipped texture/geometry updates and fresh head views. Not production XR performance.' };
+  };
   window.runQuestHeadSnapshotTests = async () => {
     const world = await runWorldBatchComparison('headSnapshot');
     const worker = await runSceneWorkerProbe(true);

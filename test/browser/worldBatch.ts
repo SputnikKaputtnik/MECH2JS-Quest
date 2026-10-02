@@ -19,11 +19,15 @@ import { renderOptions } from '../../src/sim/display/renderState.ts';
 import { scrounge } from '../../src/sim/world/scrounge.ts';
 import { runScroungeSubmissionBenchmark } from './scroungeBenchmark.ts';
 import { encodeReferenceScene, ReferenceScene } from '../../src/render/snapshot/referenceScene.ts';
-import { encodeWorldState, WorldStateRenderer } from '../../src/render/snapshot/worldState.ts';
+import { captureWorldState, encodeWorldState, WorldStateRenderer, type WorldPacket } from '../../src/render/snapshot/worldState.ts';
+import { encodeReferencePacket, ResourcePacketEncoder, ResourcePacketDecoder } from '../../src/render/snapshot/referencePacket.ts';
 import { worldRootNode } from '../../src/engine/scene/objectLists.ts';
 import { viewScene } from '../../src/sim/world/viewScene.ts';
 
-export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrounge' | 'snapshot' | 'headSnapshot' = 'batch') {
+export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrounge' | 'snapshot' | 'headSnapshot' | 'resourceSnapshot' = 'batch') {
+  const headVariant = variant === 'headSnapshot' || variant === 'resourceSnapshot';
+  let resources: ResourcePacketEncoder | undefined, receiver: ResourcePacketDecoder | undefined;
+  let resourceBasisBytes = 0, fullSnapshotBytes = 0;
   const data = await loadGameData(new FetchSource());
   setDosFiles(data.loose);
   seedControlFiles(data.shellExe);
@@ -61,14 +65,36 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
       game.updateTextures(sr);
       cameraFromViewer(viewer(), camera, 4 / 3);
       origin.copy(camera.position); baseRotation.copy(camera.quaternion);
-      if (variant === 'headSnapshot') {
+      if (headVariant) {
         headSnapshot?.dispose();
-        const bytes = encodeWorldState(viewer(), sr.uniforms);
-        headSnapshotBytes = bytes.byteLength;
-        headSnapshot = new WorldStateRenderer(structuredClone(bytes, { transfer: [bytes.buffer] }));
+        if (variant === 'resourceSnapshot') {
+          // Exercise a changed palette after the basis, including a discarded
+          // publication of that exact update. A chain of frame deltas would fail.
+          if (phase > 0) {
+            const palette = sr.uniforms.uPalette.value.image.data as Uint8Array;
+            for (let i = 0; i < palette.length; i += 4) palette[i] = 255 - palette[i]!;
+            sr.uniforms.uPalette.value.needsUpdate = true;
+          }
+          const state = captureWorldState(viewer(), sr.uniforms);
+          fullSnapshotBytes = encodeReferencePacket(state).byteLength;
+          if (!resources) {
+            resources = new ResourcePacketEncoder('image-probe', state);
+            resourceBasisBytes = resources.initial.byteLength;
+            receiver = new ResourcePacketDecoder('image-probe', resources.initial);
+          }
+          resources.encode(state); // deliberately discarded, never decoded
+          const bytes = resources.encode(state);
+          headSnapshotBytes = bytes.byteLength;
+          const decoded = receiver!.decode(structuredClone(bytes, { transfer: [bytes.buffer] })) as WorldPacket;
+          headSnapshot = new WorldStateRenderer(decoded);
+        } else {
+          const bytes = encodeWorldState(viewer(), sr.uniforms);
+          headSnapshotBytes = bytes.byteLength;
+          headSnapshot = new WorldStateRenderer(structuredClone(bytes, { transfer: [bytes.buffer] }));
+        }
         headSnapshot.renderer.batchWorld = false;
       }
-      for (const yaw of variant === 'headSnapshot' ? [0, -0.5, 0.5, 1.5, 3, -3, -1.5] : [0, -0.5, 0.5, 1.5, 3]) for (const pitch of variant === 'headSnapshot' ? [0, -0.7, 0.7] : [0]) for (const eye of variant === 'scrounge' || variant === 'snapshot' || variant === 'headSnapshot' ? [-0.032, 0.032, 'stereo'] : [0]) {
+      for (const yaw of headVariant ? [0, -0.5, 0.5, 1.5, 3, -3, -1.5] : [0, -0.5, 0.5, 1.5, 3]) for (const pitch of headVariant ? [0, -0.7, 0.7] : [0]) for (const eye of variant === 'scrounge' || variant === 'snapshot' || headVariant ? [-0.032, 0.032, 'stereo'] : [0]) {
         camera.position.copy(origin);
         camera.position.z += phase * 25;
         camera.quaternion.copy(baseRotation).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
@@ -89,12 +115,12 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
         sr.sync(viewerFromCamera(camera, viewer(), passViewer));
         sr.setViewport(640, 480);
         const draw = (batched: boolean, bytes: Uint8Array) => {
-          sr.batchWorld = variant === 'snapshot' || variant === 'headSnapshot' ? false : variant !== 'batch' || batched;
+          sr.batchWorld = variant === 'snapshot' || headVariant ? false : variant !== 'batch' || batched;
           if (variant === 'wasm') { sr.wasmPolygons = batched; sr.sync(viewerFromCamera(camera, viewer(), passViewer)); }
           if (variant === 'scrounge') { ground.batchCopies = batched; ground.updateField(sr, true); }
           renderer.setRenderTarget(target);
           renderer.clear(); renderer.info.reset();
-          if (variant === 'snapshot' || variant === 'headSnapshot') {
+          if (variant === 'snapshot' || headVariant) {
             renderer.render(sr.backdropScene, drawCamera); renderer.clearDepth();
             sr.renderWorld(renderer, drawCamera); renderer.clearDepth();
             renderer.render(sr.cockpitScene, drawCamera);
@@ -106,7 +132,7 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
         const reference = draw(false, a);
         let snapshotBytes = 0;
         let batched;
-        if (variant === 'headSnapshot') {
+        if (headVariant) {
           snapshotBytes = headSnapshotBytes;
           // Deliberately remove live scene roots while the consumer prepares its
           // next view. A hidden dependency must fail this comparison.
@@ -140,13 +166,13 @@ export async function runWorldBatchComparison(variant: 'batch' | 'wasm' | 'scrou
         }
         const submission = variant === 'scrounge' && phase === 0 && yaw === 0 && eye === 'stereo'
           ? runScroungeSubmissionBenchmark(sr, ground, renderer, drawCamera as THREE.ArrayCamera) : undefined;
-        rows.push({ phase, yaw, pitch, eye, drawn, different, percent: different / (640 * 480) * 100, reference, batched, submission, snapshotBytes });
+        rows.push({ phase, yaw, pitch, eye, drawn, different, percent: different / (640 * 480) * 100, reference, batched, submission, snapshotBytes, resourceBasisBytes, fullSnapshotBytes });
       }
     }
     if (!rows.some((r) => r.drawn > 1000)) throw Error('Comparison rendered no visible world');
     // Matrix multiplication moves from CPU doubles to GPU floats. A few pixels
     // along edges/dither thresholds can differ; large differences are a failure.
-    const failures = rows.filter(r => variant === 'wasm' || variant === 'snapshot' || variant === 'headSnapshot' ? r.different !== 0 : r.percent > 0.1);
+    const failures = rows.filter(r => variant === 'wasm' || variant === 'snapshot' || headVariant ? r.different !== 0 : r.percent > 0.1);
     if (failures.length) throw Error(`${variant} image mismatch: ${JSON.stringify(failures)}`);
     if (variant === 'wasm' && sr.wasmStats.meshes === 0) throw Error('Wasm comparison only exercised fallback');
     if (variant === 'scrounge' && !rows.some(r => r.batched.calls < r.reference.calls)) throw Error(`Scrounge batching did not reduce submissions: ${JSON.stringify({active: scrounge.scroungeActive, children: ground.field.children.length, rows: rows.slice(0, 4)})}`);

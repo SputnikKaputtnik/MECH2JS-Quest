@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { decodeReferencePacket, encodeReferencePacket } from './referencePacket.ts';
 
-interface Packet {
+export interface ReferenceScenePacket {
   version: 1;
   scene: ReturnType<THREE.Object3D['toJSON']>;
   ranges: Record<string, [number, number | null]>;
@@ -25,9 +25,15 @@ export interface SceneSource {
 /** Includes independent geometry, material uniforms, texture pixels and camera.
  * Returns encoded bytes, so no mutable source references can escape. */
 export function encodeReferenceScene(source: SceneSource): Uint8Array {
+  return encodeReferencePacket(captureReferenceScene(source));
+}
+
+/** Serialization data for embedding in a larger binary envelope. Treat the
+ * result as a capture intermediate; encode it before crossing thread ownership. */
+export function captureReferenceScene(source: SceneSource): ReferenceScenePacket {
   const roots = [source.backdrop, source.world, source.cockpit, source.camera];
   if (roots.some(root => root.parent !== null)) throw Error('Snapshot roots must be unparented');
-  const ranges: Packet['ranges'] = {};
+  const ranges: ReferenceScenePacket['ranges'] = {};
   for (const root of roots) root.traverse(object => {
     if (object.matrixAutoUpdate) object.updateMatrix();
     if (Object.keys(object.userData).length) throw Error('Snapshot does not carry arbitrary userData');
@@ -52,8 +58,7 @@ export function encodeReferenceScene(source: SceneSource): Uint8Array {
   // A serialization-only container: do not reparent or mutate source scenes.
   const container = new THREE.Group();
   container.children = roots;
-  const packet: Packet = { version: 1, scene: container.toJSON(), ranges };
-  return encodeReferencePacket(packet);
+  return { version: 1, scene: container.toJSON(), ranges };
 }
 
 export class ReferenceScene {
@@ -64,8 +69,9 @@ export class ReferenceScene {
   private readonly root: THREE.Object3D;
   private disposed = false;
 
-  constructor(bytes: Uint8Array) {
-    const packet = decodeReferencePacket(bytes) as Packet;
+  /** Object input must be owned decoded data, not mutable producer storage. */
+  constructor(bytes: Uint8Array | ReferenceScenePacket) {
+    const packet = bytes instanceof Uint8Array ? decodeReferencePacket(bytes) as ReferenceScenePacket : bytes;
     if (packet.version !== 1) throw Error('Unsupported scene snapshot version');
     this.root = new THREE.ObjectLoader().parse(packet.scene);
     const [backdrop, world, cockpit, camera] = this.root.children;
