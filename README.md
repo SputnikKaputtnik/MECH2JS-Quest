@@ -8,6 +8,8 @@ Start with the [current development handoff](docs/quest-handoff.md): worker/full
 
 See [Quest setup, controls and measured status](QUEST-STANDALONE.md). The original project's documentation is preserved below.
 
+For maintainer evaluation, the [full-feature pre-worker release](https://github.com/SputnikKaputtnik/MECH2JS-Quest/releases/tag/v0.1.0-quest-preworker) preserves the standalone APK from `4622674`. Download its maintainer kit alongside the APK for installation instructions and notices; supply your own DOS game data. This is an experimental baseline, not a stable-90-FPS release.
+
 ## Original project: MechWarrior 2 TypeScript port
 
 A faithful port of MechWarrior 2 (1995, DOS) to TypeScript, three.js and

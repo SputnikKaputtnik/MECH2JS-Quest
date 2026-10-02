@@ -29,6 +29,17 @@ are later work. No SteamVR/Link dependency or full C rewrite is part of this ste
 
 ## What runs where
 
+The full standalone pre-worker baseline is preserved as
+[v0.1.0-quest-preworker](https://github.com/SputnikKaputtnik/MECH2JS-Quest/releases/tag/v0.1.0-quest-preworker)
+at `462267494ca82839caacc1735ad5464612e72fd0`. Assets: unchanged signed APK,
+English maintainer kit with licenses/install instructions, and SHA-256 sums.
+APK SHA-256: `7fa1284700fb303ba2b71830129ac2e588fed3c7b48b333ee57f7bdf3501da37`.
+Source rebuild reproduced compiled frontend assets and native bootstrap DEX;
+the service worker differs only in line endings. Packaging validation passed
+29 focused unit tests, 21 local HTTP cases, TypeScript/Wasm checks, signature and
+alignment checks. No fresh headset run or performance claim accompanied packaging.
+The release contains no original game data, saves or signing keys.
+
 | Path | Runtime / entry | Status |
 | --- | --- | --- |
 | Full browser game | Quest Browser, normally `http://localhost:5173/` | Offline installation and separate browser save profile; fallback |
