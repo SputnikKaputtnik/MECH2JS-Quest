@@ -166,6 +166,47 @@ The first on-device image run passed with at most 36 differing world pixels per 
 
 ## Validation
 
+### Simulation worker groundwork (2026-10-02)
+
+`src/engine/snapshotMailbox.ts` provides a DOM-free, three-buffer transfer pool.
+The producer skips extraction/publication when all slots are in flight. The
+consumer retains the displayed snapshot, replaces its pending snapshot with the
+newest arrival, and returns superseded buffers to the producer. Transferring
+ArrayBuffers detaches the sender's views; there is no concurrently writable
+snapshot and no requirement for SharedArrayBuffer or cross-origin isolation.
+Metadata must be structured-cloneable. A fresh epoch/endpoints isolates each
+mission or worker restart. Close the consumer before terminating its worker.
+
+This is groundwork, **not an enabled worker gameplay path**. `Game.playFrame`
+still runs synchronously inside `GameScreen.frame`. `SceneRenderer.sync` still
+reads mutable engine globals, and WebXR still shares the app's main thread.
+Existing camera interpolation cannot isolate that thread from simulation stalls.
+
+Unit tests cover transferred ownership, bounded storage, latest-state selection,
+buffer reuse, failed extraction/clone, disposal and stale mission releases. A
+real Node worker probe also runs independently of consumer timers during a
+deliberate synchronous CPU stall. With private game data, the same probe boots
+AMY_SCN1 and runs actual timer/simulation steps in the worker, publishing copied
+camera state. It checks ten consumer ticks while the producer is blocked, then
+checks the next snapshot after release. The atomic stall gate is test-only;
+production snapshot transport uses exclusive transferable buffers.
+
+Run `node --import tsx tools/snapshot-worker-probe.ts --mission` with `MW2_ROOT`
+configured; omit `--mission` for synthetic data. Redirect JSON stdout to a private
+file outside this repository. These are PC scheduling/ownership checks with tiny
+camera packets, **not** rendering, snapshot-bandwidth, WebXR or 90-FPS results.
+
+Next integration steps are a complete rendering snapshot (stable resource IDs,
+object transforms, camera, palette/lighting, texture changes, HUD and inset views),
+a renderer that consumes it without reading simulation globals, and input/audio/
+save/menu bridges. Snapshots must include surroundings needed after a head turn,
+not just polygons visible from the last game-camera direction. Static resources
+should be cached at the consumer; deltas need acknowledged resource revisions so
+dropping an intermediate snapshot cannot drop a required texture/geometry update.
+GPU uploads must own/copy their data before a transferred buffer is recycled.
+Only then can worker gameplay be enabled and compared against the reference
+renderer on desktop and verified for stereo, controls and frame pacing on Quest.
+
 Engine, app and tool/test TypeScript checks, ESLint and the production/offline build are run locally. Targeted tests cover the real pilot registry, virtual keyboard, controller neutral/release behavior, shell return without stale-click relaunch, comfort options, HUD upload reuse, cockpit-relative FPS placement, graphics settings and offline worker activation.
 
 Batch tests cover visibility, clipped geometry/colour updates, moving parts, shadow-layer preservation, draw failure recovery, unchanged-buffer reuse and repeated effect replacement. The WebGL comparison at `/test/browser/worldBatch.html` (dev server only, separate browser context) renders reference and batched images of the same frozen mission state. In 15 AMY_SCN1 views at 640×480 it found 0–4 differing pixels per image and no shader errors; moving matrix multiplication to GPU floats can shift edge/dither pixels. One forward view fell from 133 world draw calls/2,479 submitted triangles to 2 calls/734 triangles. This does not replace testing other missions, close clipping, effects and stereo in the headset.
