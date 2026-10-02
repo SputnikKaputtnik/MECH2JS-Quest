@@ -13,6 +13,7 @@ const adb = process.env.ADB ?? (process.platform === 'win32' && fs.existsSync('C
 const output = process.argv[2];
 const headSnapshot = process.argv[3] === '--head-snapshot';
 const resourceSnapshot = process.argv[3] === '--resource-snapshot';
+const continuous = process.argv[3] === '--continuous-worker';
 const snapshotOnly = process.argv[3] === '--snapshot' || headSnapshot || resourceSnapshot;
 const socketName = process.env.QUEST_CDP_SOCKET ?? 'chrome_devtools_remote';
 if (!['chrome_devtools_remote', 'content_shell_devtools_remote'].includes(socketName)) throw Error('Unsupported Quest runtime socket');
@@ -96,13 +97,14 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   const result = await page.call('Runtime.evaluate', {
-    expression: resourceSnapshot ? 'window.runQuestResourceSnapshotTests()' : headSnapshot ? 'window.runQuestHeadSnapshotTests()' : snapshotOnly ? 'window.runQuestSnapshotTests()' : 'window.runQuestTests()', awaitPromise: true, returnByValue: true,
+    expression: continuous ? 'window.runQuestContinuousWorkerTests()' : resourceSnapshot ? 'window.runQuestResourceSnapshotTests()' : headSnapshot ? 'window.runQuestHeadSnapshotTests()' : snapshotOnly ? 'window.runQuestSnapshotTests()' : 'window.runQuestTests()', awaitPromise: true, returnByValue: true,
   });
   if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails));
   const report = { recordedAt: new Date().toISOString(), model: device('shell', 'getprop', 'ro.product.model'), runtimeSocket: socketName, ...result.result.value };
   fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
   fs.writeFileSync(output, JSON.stringify(report, null, 2));
-  if (snapshotOnly) console.log(JSON.stringify({ report: path.resolve(output), worldViews: report.world.length,
+  if (continuous) console.log(JSON.stringify({ report: path.resolve(output), ...report, rows: undefined }));
+  else if (snapshotOnly) console.log(JSON.stringify({ report: path.resolve(output), worldViews: report.world.length,
     maxWorldPixelDifference: Math.max(...report.world.map(r => r.different)), worker: report.worker, xr: false }));
   else console.log(JSON.stringify({ report: path.resolve(output), worldViews: report.world.length, maxWorldPixelDifference: Math.max(...report.world.map(r => r.different)), hudViews: report.hud.length, maxHudPixelDifference: Math.max(...report.hud.map(r => r.different)), lighting: { polygons: report.lighting.polygons, referenceMs: report.lighting.referenceMs, optimizedMs: report.lighting.optimizedMs, mismatches: report.lighting.mismatches }, xr: false }));
 } finally {

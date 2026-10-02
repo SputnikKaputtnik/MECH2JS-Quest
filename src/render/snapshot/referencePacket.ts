@@ -10,7 +10,16 @@ const validType = (name: unknown): name is TypeName => typeof name === 'string' 
 
 interface Resource { type: TypeName; bytes: Uint8Array }
 interface Resources { baseline?: readonly Resource[]; capture?: Resource[] }
-const equalBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
+function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  // These are freshly allocated typed-array buffers, hence word aligned.
+  // Compare exact bits without a JS callback per texel (also preserves -0/NaN).
+  const words = Math.floor(a.length / 4);
+  const aw = new Uint32Array(a.buffer, a.byteOffset, words), bw = new Uint32Array(b.buffer, b.byteOffset, words);
+  for (let i = 0; i < words; i++) if (aw[i] !== bw[i]) return false;
+  for (let i = words * 4; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 export function encodeReferencePacket(value: unknown): Uint8Array { return encode(value); }
 

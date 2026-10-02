@@ -34,6 +34,7 @@ export function captureReferenceScene(source: SceneSource): ReferenceScenePacket
   const roots = [source.backdrop, source.world, source.cockpit, source.camera];
   if (roots.some(root => root.parent !== null)) throw Error('Snapshot roots must be unparented');
   const ranges: ReferenceScenePacket['ranges'] = {};
+  const meta: THREE.JSONMeta = { geometries: {}, materials: {}, textures: {}, images: {}, shapes: {}, skeletons: {}, animations: {}, nodes: {} };
   for (const root of roots) root.traverse(object => {
     if (object.matrixAutoUpdate) object.updateMatrix();
     if (Object.keys(object.userData).length) throw Error('Snapshot does not carry arbitrary userData');
@@ -49,6 +50,15 @@ export function captureReferenceScene(source: SceneSource): ReferenceScenePacket
           if (value instanceof THREE.Texture && (!(value instanceof THREE.DataTexture) || value.isRenderTargetTexture)) {
             throw Error('Snapshot requires CPU-backed texture pixels');
           }
+          if (value instanceof THREE.DataTexture) {
+            const { data, width, height } = value.image;
+            if (!data) throw Error('Snapshot requires CPU-backed texture pixels');
+            // Preseed Three's serialization cache. TextureSource.toJSON would
+            // expand every texel to a boxed JS number via Array.from each frame.
+            // Our binary envelope accepts typed arrays and copies their bytes.
+            meta.images[value.source.uuid] = { uuid: value.source.uuid,
+              url: { data, width, height, type: data.constructor.name } } as unknown as THREE.TextureSourceJSON;
+          }
         }
       }
     } else if (!(object instanceof THREE.Scene || object instanceof THREE.Group || object instanceof THREE.PerspectiveCamera)) {
@@ -58,7 +68,15 @@ export function captureReferenceScene(source: SceneSource): ReferenceScenePacket
   // A serialization-only container: do not reparent or mutate source scenes.
   const container = new THREE.Group();
   container.children = roots;
-  return { version: 1, scene: container.toJSON(), ranges };
+  const scene = container.toJSON(meta);
+  for (const [key, entries] of Object.entries(meta)) {
+    const values = Object.values(entries).map(entry => {
+      const { metadata: _metadata, ...value } = entry as Record<string, unknown>;
+      return value;
+    });
+    if (values.length) Object.assign(scene, { [key]: values });
+  }
+  return { version: 1, scene, ranges };
 }
 
 export class ReferenceScene {
