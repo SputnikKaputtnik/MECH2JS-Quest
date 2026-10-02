@@ -7,6 +7,18 @@
 <pre id="result">Ready</pre>
 <script type="module">
   import { runWorldBatchComparison } from './worldBatch.ts';
+  import { runSceneWorkerProbe } from './sceneWorkerProbe.ts';
+  window.runQuestSnapshotTests = async () => {
+    const status = document.querySelector('#result');
+    status.textContent = 'Comparing copied scene images…';
+    const world = await runWorldBatchComparison('snapshot');
+    status.textContent = 'Rendering a real worker scene during a producer stall…';
+    const worker = await runSceneWorkerProbe();
+    const report = { kind: 'snapshot-image-and-worker-regression', xr: false,
+      userAgent: navigator.userAgent, world, worker };
+    status.textContent = JSON.stringify(report, null, 2);
+    return report;
+  };
   import { runHudCropComparison } from './hudCrop.ts';
   import { runLightingBenchmark } from './lightingBenchmark.ts';
   import { runResourceLifetimeCheck } from './resourceLifetime.ts';

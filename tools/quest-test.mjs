@@ -1,6 +1,9 @@
 /** @portOnly Unattended image checks on an authorized USB Quest. Requires a
- * separate Vite dev server on localhost:5175. Never touches the game's tab,
- * saves, sleep settings or XR permissions. Output is private, outside the repo. */
+ * separate Vite server on localhost:5175. Browser mode uses its own tab; embedded
+ * runtime mode temporarily navigates ONLY the idle Start in VR page and restores
+ * it afterward (Target.createTarget crashes Wolvic Chromium 1.4). Neither mode
+ * loads player saves in the fixture or changes sleep settings/XR permissions.
+ * Output is private, outside the repo. */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,6 +11,9 @@ import path from 'node:path';
 const adb = process.env.ADB ?? (process.platform === 'win32' && fs.existsSync('C:/Android/Sdk/platform-tools/adb.exe')
   ? 'C:/Android/Sdk/platform-tools/adb.exe' : 'adb');
 const output = process.argv[2];
+const snapshotOnly = process.argv[3] === '--snapshot';
+const socketName = process.env.QUEST_CDP_SOCKET ?? 'chrome_devtools_remote';
+if (!['chrome_devtools_remote', 'content_shell_devtools_remote'].includes(socketName)) throw Error('Unsupported Quest runtime socket');
 if (!output) throw Error('Usage: node tools/quest-test.mjs <private-report.json>');
 const runAdb = (...args) => execFileSync(adb, args, { encoding: 'utf8', timeout: 15000, windowsHide: true }).trim();
 const devices = runAdb('devices').split('\n').map(s => s.trim().split(/\s+/)).filter(s => s[1] === 'device');
@@ -50,22 +56,34 @@ function connect(url) {
   });
 }
 
-let browser, page, targetId, port;
+let browser, page, targetId, port, restoreUrl;
 let addedReverse = false;
 try {
   const reverse = device('reverse', '--list').split('\n').map(s => s.trim().split(/\s+/)).find(s => s[1] === 'tcp:5175');
   if (reverse && reverse[2] !== 'tcp:5175') throw Error('Quest port 5175 is already mapped elsewhere.');
   if (!reverse) { device('reverse', 'tcp:5175', 'tcp:5175'); addedReverse = true; }
-  port = device('forward', 'tcp:0', 'localabstract:chrome_devtools_remote');
+  port = device('forward', 'tcp:0', `localabstract:${socketName}`);
   if (!/^\d+$/.test(port)) throw Error(`Unexpected ADB forward response: ${port}`);
   const base = `http://127.0.0.1:${port}`;
-  const version = await (await fetch(`${base}/json/version`, { signal: AbortSignal.timeout(5000) })).json();
-  browser = await connect(version.webSocketDebuggerUrl);
-  ({ targetId } = await browser.call('Target.createTarget', { url: 'http://localhost:5175/test/browser/questHarness.html', background: true }));
-  const targets = await (await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(5000) })).json();
-  const target = targets.find(t => t.id === targetId);
-  if (!target) throw Error('Test tab missing');
-  page = await connect(target.webSocketDebuggerUrl);
+  const fixtureUrl = 'http://localhost:5175/test/browser/questHarness.html';
+  if (socketName === 'content_shell_devtools_remote') {
+    const targets = await (await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(5000) })).json();
+    const target = targets.find(t => t.type === 'page' && t.url.startsWith('http://127.0.0.1:19895/'));
+    if (!target) throw Error('Embedded runtime start page missing');
+    page = await connect(target.webSocketDebuggerUrl);
+    const idle = await page.call('Runtime.evaluate', { expression: '!document.querySelector(".game-view") && [...document.querySelectorAll("button")].some(b => b.textContent === "Start in VR")', returnByValue: true });
+    if (idle.result?.value !== true) throw Error('Embedded runtime must be idle at Start in VR; refusing to replace active gameplay');
+    restoreUrl = target.url;
+    await page.call('Page.navigate', { url: fixtureUrl });
+  } else {
+    const version = await (await fetch(`${base}/json/version`, { signal: AbortSignal.timeout(5000) })).json();
+    browser = await connect(version.webSocketDebuggerUrl);
+    ({ targetId } = await browser.call('Target.createTarget', { url: fixtureUrl, background: true }));
+    const targets = await (await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(5000) })).json();
+    const target = targets.find(t => t.id === targetId);
+    if (!target) throw Error('Test tab missing');
+    page = await connect(target.webSocketDebuggerUrl);
+  }
   console.log(`Running isolated renderer checks on ${device('shell', 'getprop', 'ro.product.model')}…`);
   const deadline = Date.now() + 60000;
   for (;;) {
@@ -76,14 +94,17 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   const result = await page.call('Runtime.evaluate', {
-    expression: 'window.runQuestTests()', awaitPromise: true, returnByValue: true,
+    expression: snapshotOnly ? 'window.runQuestSnapshotTests()' : 'window.runQuestTests()', awaitPromise: true, returnByValue: true,
   });
   if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails));
-  const report = { recordedAt: new Date().toISOString(), model: device('shell', 'getprop', 'ro.product.model'), ...result.result.value };
+  const report = { recordedAt: new Date().toISOString(), model: device('shell', 'getprop', 'ro.product.model'), runtimeSocket: socketName, ...result.result.value };
   fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
   fs.writeFileSync(output, JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ report: path.resolve(output), worldViews: report.world.length, maxWorldPixelDifference: Math.max(...report.world.map(r => r.different)), hudViews: report.hud.length, maxHudPixelDifference: Math.max(...report.hud.map(r => r.different)), lighting: { polygons: report.lighting.polygons, referenceMs: report.lighting.referenceMs, optimizedMs: report.lighting.optimizedMs, mismatches: report.lighting.mismatches }, xr: false }));
+  if (snapshotOnly) console.log(JSON.stringify({ report: path.resolve(output), worldViews: report.world.length,
+    maxWorldPixelDifference: Math.max(...report.world.map(r => r.different)), worker: report.worker, xr: false }));
+  else console.log(JSON.stringify({ report: path.resolve(output), worldViews: report.world.length, maxWorldPixelDifference: Math.max(...report.world.map(r => r.different)), hudViews: report.hud.length, maxHudPixelDifference: Math.max(...report.hud.map(r => r.different)), lighting: { polygons: report.lighting.polygons, referenceMs: report.lighting.referenceMs, optimizedMs: report.lighting.optimizedMs, mismatches: report.lighting.mismatches }, xr: false }));
 } finally {
+  if (restoreUrl && page) await page.call('Page.navigate', { url: restoreUrl }).catch(console.error);
   page?.close();
   if (targetId && browser) await browser.call('Target.closeTarget', { targetId }).catch(console.error);
   browser?.close();

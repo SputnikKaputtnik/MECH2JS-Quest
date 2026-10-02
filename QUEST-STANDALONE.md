@@ -207,6 +207,43 @@ GPU uploads must own/copy their data before a transferred buffer is recycled.
 Only then can worker gameplay be enabled and compared against the reference
 renderer on desktop and verified for stereo, controls and frame pacing on Quest.
 
+The next reference implementation in `src/render/snapshot/` carries complete
+world/backdrop/cockpit scene resources and the game camera, with independent
+geometry, shader state, palette, LUMA, atlas and animated texture-slot pixels.
+Binary typed-array sections reduce the tested full-state packet from 18,636,798
+to 6,053,352 bytes (about 67.5%). The metadata codec remains deliberately based
+on Three's scene schema as a correctness reference; it is not an efficient
+per-frame production format. Static resources and shader sources still repeat.
+GPU-only textures and render callbacks are rejected instead of silently lost.
+
+`node tools/quest-test.mjs ../private-snapshot-report.json --snapshot` runs 45
+exact image comparisons over three simulation phases, five viewing directions,
+left/right eye offsets and an ArrayCamera stereo view. It also checks snapshot
+GPU resource disposal. A browser worker boots the actual mission engine, extracts
+and transfers a scene through the three-slot mailbox, then destroys its source
+render resources. The consumer reconstructs its own resources before returning
+the packet buffer. It continues offscreen WebGL drawing while that worker blocks
+for 600 ms. The tested Quest 3 run produced 59 draws during the stall; these are
+timer-driven offscreen submissions, **not** display/XR/compositor FPS.
+
+Both Quest Browser and embedded Wolvic Chromium 1.4 passed the 45 image checks
+with zero differing pixels. To select the latter, set
+`QUEST_CDP_SOCKET=content_shell_devtools_remote`; the runner requires the app to
+be idle at **Start in VR**, navigates to the isolated fixture, then restores that
+page. It refuses to replace active gameplay. The fixture uses scratch mission
+state and never loads player saves. Do not use CDP `Target.createTarget` on this
+runtime: the attempted call caused a native SIGSEGV in `libcontent_native.so`.
+The runner now avoids it for Wolvic; normal Quest Browser tests keep a separate
+temporary tab. This workaround does not fix the runtime's native defect.
+
+The reference packet contains geometry **after** view-dependent CPU culling and
+clipping. These tests regenerate a snapshot for each view; they do not establish
+arbitrary head-turn completeness between snapshots. The production app remains
+unchanged. An uncoupled XR path still requires head-independent scene coverage,
+bounded resource revisions/deltas, HUD/inset state and the input/audio/lifecycle
+bridges described above. No new APK installation or 90-FPS claim accompanies
+these development fixtures.
+
 Engine, app and tool/test TypeScript checks, ESLint and the production/offline build are run locally. Targeted tests cover the real pilot registry, virtual keyboard, controller neutral/release behavior, shell return without stale-click relaunch, comfort options, HUD upload reuse, cockpit-relative FPS placement, graphics settings and offline worker activation.
 
 Batch tests cover visibility, clipped geometry/colour updates, moving parts, shadow-layer preservation, draw failure recovery, unchanged-buffer reuse and repeated effect replacement. The WebGL comparison at `/test/browser/worldBatch.html` (dev server only, separate browser context) renders reference and batched images of the same frozen mission state. In 15 AMY_SCN1 views at 640×480 it found 0–4 differing pixels per image and no shader errors; moving matrix multiplication to GPU floats can shift edge/dither pixels. One forward view fell from 133 world draw calls/2,479 submitted triangles to 2 calls/734 triangles. This does not replace testing other missions, close clipping, effects and stereo in the headset.
