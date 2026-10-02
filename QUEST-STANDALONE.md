@@ -244,6 +244,35 @@ bounded resource revisions/deltas, HUD/inset state and the input/audio/lifecycle
 bridges described above. No new APK installation or 90-FPS claim accompanies
 these development fixtures.
 
+The subsequent `worldState.ts` reference path captures **unculled** world,
+backdrop and cockpit objects, all mesh LODs, transforms, polygon ownership,
+viewer/light state and indexed texture resources. Collision/list pointers are
+not copied. The consumer reconstructs private engine drawing records and calls
+`SceneRenderer.sync(viewer, source)` using the current view. Thus original cull,
+LOD, lighting and near-plane clipping rules run against owned snapshot data,
+without requesting another simulation step. Existing gameplay callers continue
+to use the unchanged default live-scene source.
+
+The legacy drawing helpers still use module-local configuration/scratch globals.
+The consumer temporarily installs captured render options, cockpit state and
+lighting for its synchronous preparation pass, restoring them in `finally` even
+on errors. Map hooks are explicitly rejected because radar/allegiance state is
+not captured. This does not yet cover HUD/inset views, enhancement-specific
+passes, sky-plane construction, audio, input or mission lifecycle transitions.
+
+Run the isolated runner with `--head-snapshot`. In embedded Wolvic on Quest 3,
+189 exact image comparisons passed with zero differing pixels: three simulation
+phases, seven yaw angles, three pitch angles and left/right/stereo views. Each
+phase publishes only one snapshot, before the view sweep. During consumer
+preparation the fixture removes live scene roots to expose accidental reads.
+A real browser worker also supplies an unculled scene then destroys its source
+renderer. While that worker stalls for 600 ms, the consumer sweeps a complete
+turn and submits 59 offscreen draws. These counts are not display/XR FPS. The
+tested initial packet is 5,691,048 bytes; full-state encoding/decoding and CPU
+view preparation remain unsuitable as a claimed optimized gameplay pipeline.
+Resource IDs/revisions, incremental updates and independent HUD/input/audio
+bridges remain the next integration steps; no gameplay switch is enabled yet.
+
 Engine, app and tool/test TypeScript checks, ESLint and the production/offline build are run locally. Targeted tests cover the real pilot registry, virtual keyboard, controller neutral/release behavior, shell return without stale-click relaunch, comfort options, HUD upload reuse, cockpit-relative FPS placement, graphics settings and offline worker activation.
 
 Batch tests cover visibility, clipped geometry/colour updates, moving parts, shadow-layer preservation, draw failure recovery, unchanged-buffer reuse and repeated effect replacement. The WebGL comparison at `/test/browser/worldBatch.html` (dev server only, separate browser context) renders reference and batched images of the same frozen mission state. In 15 AMY_SCN1 views at 640×480 it found 0–4 differing pixels per image and no shader errors; moving matrix multiplication to GPU floats can shift edge/dither pixels. One forward view fell from 133 world draw calls/2,479 submitted triangles to 2 calls/734 triangles. This does not replace testing other missions, close clipping, effects and stereo in the headset.

@@ -138,6 +138,13 @@ export interface FrameStats {
   polygons: number;
 }
 
+/** Optional detached scene graph supplied by a snapshot consumer. */
+export interface SceneInput {
+  world: Iterable<WorldObject>;
+  backdrop: SceneNode | null;
+  cockpit: SceneNode | null;
+}
+
 const pd: PolyDraw = { fill: NOT_DRAWN, kind: FillKind.ByMode, outline: NOT_DRAWN };
 
 export class SceneRenderer {
@@ -427,7 +434,9 @@ export class SceneRenderer {
    * shell. The viewer's rotation and translation must be the camera three.js
    * draws with (render/bridge/cameraViewer.ts).
    */
-  sync(viewer: Viewer): void {
+  sync(viewer: Viewer, source?: SceneInput): void {
+    const backdrop = source ? source.backdrop : viewScene.backdropNode;
+    const cockpit = source ? source.cockpit : viewScene.cockpitHeadNode;
     const L = this.beginPass(viewer);
     const colour = polygonDrawHook();
     const seen = new Set<WorldObject>();
@@ -437,7 +446,7 @@ export class SceneRenderer {
     // (viewer_set_far_clip(0x7fffffff)) and the cull hook at 0x3f780. scene_tree_draw_objects
     // does not set polySortFlags, so its polygons keep the last value the previous frame's
     // world walk left (a quirk, reproduced).
-    if (viewScene.backdropNode) {
+    if (backdrop) {
       const far = renderView.viewFarClipScaled;
       renderView.viewFarClipScaled = 0x7fffffff;
       const walk = (n: SceneNode) => {
@@ -454,11 +463,11 @@ export class SceneRenderer {
         }
         for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
       };
-      walk(viewScene.backdropNode);
+      walk(backdrop);
       renderView.viewFarClipScaled = far;
     }
     const cull = objectCullHook();
-    for (const obj of objectsOnList(worldRootNode)) {
+    for (const obj of source ? source.world : objectsOnList(worldRootNode)) {
       seen.add(obj);
       const e = this.entry(obj, this.scene);
       const culled = cull(obj) !== 0;
@@ -475,7 +484,7 @@ export class SceneRenderer {
     // not write objectViewDepth, so the LOD walk reads the view depth of the last object the
     // world pass culled, and polySortFlags is the last world object's (both quirks, kept)
     for (const e of this.cockpitEntries.values()) e.group.visible = false;
-    if (cameraGlobals.cockpitViewActive !== 0 && viewScene.cockpitHeadNode) {
+    if (cameraGlobals.cockpitViewActive !== 0 && cockpit) {
       quirk('the cockpit pass picks LOD meshes by the view depth of the last object the world pass culled', 'vfx_video_sub_010490');
       const near = [viewer.nearClip, renderView.viewNearClip, renderView.viewNearClipScaled] as const;
       viewer.nearClip = 8;
@@ -491,7 +500,7 @@ export class SceneRenderer {
         }
         for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
       };
-      walk(viewScene.cockpitHeadNode);
+      walk(cockpit);
       [viewer.nearClip, renderView.viewNearClip, renderView.viewNearClipScaled] = near;
     }
     for (const [obj, e] of this.entries) {

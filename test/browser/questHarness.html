@@ -8,6 +8,13 @@
 <script type="module">
   import { runWorldBatchComparison } from './worldBatch.ts';
   import { runSceneWorkerProbe } from './sceneWorkerProbe.ts';
+  window.runQuestHeadSnapshotTests = async () => {
+    const world = await runWorldBatchComparison('headSnapshot');
+    const worker = await runSceneWorkerProbe(true);
+    return { kind: 'unculled-snapshot-head-turn-regression', xr: false,
+      userAgent: navigator.userAgent, world, worker, snapshots: 3,
+      note: 'One unculled snapshot per simulation phase; all viewpoints consume it without producer updates.' };
+  };
   window.runQuestSnapshotTests = async () => {
     const status = document.querySelector('#result');
     status.textContent = 'Comparing copied scene images…';

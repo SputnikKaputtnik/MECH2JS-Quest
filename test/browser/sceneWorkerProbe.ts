@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import { SnapshotConsumer } from '../../src/engine/snapshotMailbox.ts';
 import { ReferenceScene } from '../../src/render/snapshot/referenceScene.ts';
+import { WorldStateRenderer } from '../../src/render/snapshot/worldState.ts';
 
 /** Offscreen drawing on the actual device GPU while the worker is CPU-blocked.
  * This is not XR frame pacing or a measurement of production transport cost. */
-export async function runSceneWorkerProbe() {
+export async function runSceneWorkerProbe(unculled = false) {
   const worker = new Worker(new URL('./referenceSnapshotWorker.ts', import.meta.url), { type: 'module' });
-  const mailbox = new SnapshotConsumer<{ bytes: number }>('scene-probe', (m, transfer) => worker.postMessage(m, transfer));
+  const mailbox = new SnapshotConsumer<{ bytes: number; unculled: boolean }>('scene-probe', (m, transfer) => worker.postMessage(m, transfer));
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setSize(320, 240);
   const target = new THREE.WebGLRenderTarget(320, 240);
-  let scene: ReferenceScene | null = null;
+  let scene: ReferenceScene | WorldStateRenderer | null = null;
+  const baseRotation = new THREE.Quaternion();
+  const yaw = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
   let timer: ReturnType<typeof setInterval> | undefined;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const draws: number[] = [];
@@ -27,8 +30,11 @@ export async function runSceneWorkerProbe() {
             mailbox.receive(m);
             const packet = mailbox.acquire()!;
             bytes = packet.meta.bytes;
-            scene = new ReferenceScene(new Uint8Array(packet.buffer, 0, bytes));
+            scene = packet.meta.unculled ? new WorldStateRenderer(new Uint8Array(packet.buffer, 0, bytes))
+              : new ReferenceScene(new Uint8Array(packet.buffer, 0, bytes));
+            baseRotation.copy(scene.camera.quaternion);
             mailbox.close(); // recycle immediately: renderer must own all pixels/vertices
+            if (scene instanceof WorldStateRenderer) scene.sync(scene.camera, 320, 240);
             renderer.setRenderTarget(target); renderer.clear(); scene.render(renderer);
             const pixels = new Uint8Array(320 * 240 * 4);
             renderer.readRenderTargetPixels(target, 0, 0, 320, 240, pixels);
@@ -38,6 +44,10 @@ export async function runSceneWorkerProbe() {
           else if (m.kind === 'stalled') {
             timer = setInterval(() => {
               try {
+                if (scene instanceof WorldStateRenderer) {
+                  scene.camera.quaternion.copy(baseRotation).multiply(yaw.setFromAxisAngle(up, (Date.now() - m.start) / 600 * Math.PI * 2));
+                  scene.sync(scene.camera, 320, 240);
+                }
                 renderer.clear(); scene!.render(renderer);
                 draws.push(Date.now());
               } catch (error) { reject(error); }
@@ -46,16 +56,17 @@ export async function runSceneWorkerProbe() {
             clearInterval(timer);
             const during = draws.filter(t => t >= m.start && t < m.end);
             if (during.length < 3) throw Error(`No independent drawing during stall: ${during.length}`);
-            resolve({ kind: 'offscreen-worker-scene', xr: false, snapshotBytes: bytes, visiblePixels,
+            resolve({ kind: 'offscreen-worker-scene', xr: false, unculled, snapshotBytes: bytes, visiblePixels,
               producerStallMs: m.end - m.start, consumerDrawsDuringStall: during.length,
-              sourceDisposedBeforeStall: true, note: 'Fixed-view reference scene; no head-turn completeness, gameplay, XR or FPS claim.' });
+              sourceDisposedBeforeStall: true, note: unculled ? 'Consumer rotates through a full turn during the worker stall; offscreen submissions, not XR/display FPS.'
+                : 'Fixed-view reference scene; no head-turn completeness, gameplay, XR or FPS claim.' });
           }
         } catch (error) { reject(error); }
       };
-      worker.postMessage({ kind: 'init', origin: location.origin });
+      worker.postMessage({ kind: 'init', origin: location.origin, unculled });
     });
   } finally {
     clearTimeout(timeout); clearInterval(timer);
-    mailbox.close(); worker.terminate(); (scene as ReferenceScene | null)?.dispose(); target.dispose(); renderer.dispose();
+    mailbox.close(); worker.terminate(); (scene as ReferenceScene | WorldStateRenderer | null)?.dispose(); target.dispose(); renderer.dispose();
   }
 }
