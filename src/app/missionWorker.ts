@@ -26,6 +26,11 @@ import { ui } from '../sim/ui/uiContext.ts';
 import { sendKey, releaseSentKeys, setMouseStick } from './hostInput.ts';
 import type { WorkerControls } from './workerControls.ts';
 import { simTables } from '../sim/effects/simTables.ts';
+import { cameraGlobals } from '../sim/camera/viewer.ts';
+import { mechRuntime } from '../sim/mech/mechRuntime.ts';
+import { missionEndCode } from '../sim/mech/damage.ts';
+import { renderOptions } from '../sim/display/renderState.ts';
+import type { SkyGroundState } from '../render/passes/skyGround.ts';
 import { mechs } from '../sim/mech/mechGlobals.ts';
 
 type Pixels = { type: 'Uint8Array'; data: ArrayLike<number> };
@@ -36,13 +41,14 @@ export interface MissionPacket {
   throttlePlus: number;
 }
 export interface MissionMeta {
+  presentation?: { sky: SkyGroundState; cockpitActive: boolean; playerIndex: number };
   bytes: number; frame: number; simTick: number; simMs: number; captureMs: number; encodeMs: number;
   playerStatus: number; playerProjectiles: number; weaponFire: number; controls: number; published: number; skipped: number;
 }
-type Request = SnapshotRelease | WorkerControls | { kind: 'start'; epoch: string; origin: string; compact?: boolean }
-  | { kind: 'stop'; epoch: string } | { kind: 'stall'; epoch: string; ms: number };
+type Request = SnapshotRelease | WorkerControls | { kind: 'start'; epoch: string; origin: string; compact?: boolean; visibleVr?: boolean }
+  | { kind: 'pause'; epoch: string; paused: boolean } | { kind: 'stop'; epoch: string } | { kind: 'stall'; epoch: string; ms: number };
 const port = globalThis as unknown as { postMessage(message: unknown, transfers?: ArrayBuffer[]): void; onmessage: ((event: MessageEvent<Request>) => void) | null };
-let epoch = '', closed = false, started = false;
+let epoch = '', closed = false, started = false, paused = false;
 let producer: SnapshotProducer<MissionMeta> | undefined, uniforms: IndexedUniforms | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let controls = 0, inputTime = 0;
@@ -61,13 +67,25 @@ function capture(): MissionPacket {
       buffer: pixels(defaultCanvas.buffer), drawn: pixels(defaultCanvas.drawn), layer: pixels(defaultCanvas.layer), inset: pixels(defaultCanvas.inset) } };
 }
 
-async function start(origin: string, compact = false) {
+async function start(origin: string, compact = false, visibleVr = false) {
   const data = await loadGameData(new FetchSource(`${origin}/mw2/`));
   if (closed) return;
   setDosFiles(data.loose); seedControlFiles(data.shellExe);
   const argv = prepareDevMission({ shellExe: data.shellExe, prj: data.prj, stream: 'AMY_SCN1', insignia: false, userStar: null });
   if (!bootMission({ exe: data.exe, prj: data.prj, ini: data.ini, argv })) throw Error('Mission worker boot failed');
   for (let f = 0; f < 40; f++) { for (let t = 0; t < 9; t++) ailTimerService(); mainLoopFrame(); }
+  if (visibleVr) {
+    let cameraMode = cameraGlobals.cameraMode;
+    // This isolated visible test always retains the accepted no-spin policy.
+    // Mission results are evaluated normally; no player saves are loaded/written.
+    mainLoop.cameraOverride = () => {
+      const status = mechs.mechTable[mechs.playerMechIndex]?.loadout?.status;
+      if (status !== 4 && status !== 5 && !(missionEndCode() & 2)) { cameraMode = cameraGlobals.cameraMode; return false; }
+      cameraGlobals.cameraMode = cameraMode;
+      mechRuntime.playerOut = 1; ui.quitRequested = 1; ui.quitCountdown = 3;
+      return true;
+    };
+  }
   uniforms = makeUniforms(); const atlas = new BitmapAtlas(); atlas.build(uniforms);
   setPalette(uniforms, palettes.dac);
   const luma = cacheLoadResource(lighting.lumaTableId, 'LUMA');
@@ -86,6 +104,7 @@ async function start(origin: string, compact = false) {
     try {
       const now = performance.now(), elapsed = now - previous; previous = now;
       if (now - inputTime > 500) release();
+      if (paused && producer!.stats.published > 0) { timer = setTimeout(pump, 20); return; }
       const due = pacer.advance(elapsed);
       const start = performance.now();
       for (let i = 0; i < due.ticks; i++) ailTimerService();
@@ -98,6 +117,12 @@ async function start(origin: string, compact = false) {
           simMs, captureMs: 0, encodeMs: 0, playerStatus: mechs.mechTable[mechs.playerMechIndex]?.loadout?.status ?? -1,
           playerProjectiles: simTables.projectiles.filter(p => p.active && p.attackerMechIndex === mechs.playerMechIndex).length,
           weaponFire: mechs.playerControls.weapon_fire | mechs.playerControls.weapon_fire_group, controls, published: producer!.stats.published, skipped: producer!.stats.skipped };
+        if (visibleVr) meta.presentation = {
+          cockpitActive: cameraGlobals.cockpitViewActive !== 0, playerIndex: mechs.playerMechIndex,
+          sky: { sky: lighting.skyColour, ground: lighting.groundColour, skyOn: lighting.skyEnabled !== 0,
+            groundOn: lighting.groundEnabled !== 0, bandHeight: lighting.horizonBandHeight,
+            screenWidth: defaultCanvas.xMax + 1, bandOn: lighting.horizonBandEnabled !== 0 && renderOptions.shadedFillEnabled !== 0 },
+        };
         producer!.publish(meta, buffer => {
           const begin = performance.now(), state = capture(), encodedAt = performance.now();
           if (encoder instanceof CompactWorldEncoder) {
@@ -122,10 +147,11 @@ port.onmessage = ({ data: m }) => {
   try {
     if (m.kind === 'start') {
       if (started) throw Error('Mission worker must be recreated for each epoch');
-      started = true; epoch = m.epoch; void start(m.origin, m.compact).catch(fail); return;
+      started = true; epoch = m.epoch; paused = !!m.visibleVr; void start(m.origin, m.compact, m.visibleVr).catch(fail); return;
     }
     if (m.epoch !== epoch || closed) return;
     if (m.kind === 'snapshot-release') producer?.release(m);
+    else if (m.kind === 'pause') { paused = m.paused; if (paused) release(); }
     else if (m.kind === 'stop') { stop(); port.postMessage({ kind: 'stopped', epoch }); }
     else if (m.kind === 'controls') {
       if (!Number.isSafeInteger(m.sequence) || m.sequence <= controls || m.keys.length > 64) throw Error('Invalid worker controls');

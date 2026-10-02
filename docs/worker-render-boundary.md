@@ -204,3 +204,60 @@ Submission time is CPU time, **not GPU time**. None of these figures establishes
 90 Hz XR presentation, native-resolution headroom, production cockpit integration
 or long-combat stability. Full immutable reference snapshots remain the correctness
 oracle; private raw reports remain outside the repository.
+
+
+## Visible VR experiment
+
+Open `/test/browser/workerVr.html` through the Vite server started with `--config tools/vite-worker-vr.config.ts`
+(hot reload and filesystem watching disabled; USB reverse port
+5175) in the existing Quest runtime. The native application remains installed;
+this development route requires its USB connection and the running server.
+Select **Start in VR** after the isolated AMY_SCN1 mission has prepared. The
+worker initially publishes one state and pauses, so loading does not consume the
+mission before entry. XR visibility loss releases input and pauses simulation;
+re-entry resumes the same mission. Restart makes a fresh worker and epoch.
+
+The presenter uses the existing XR rig, original cockpit shell, palette sky,
+HUD overlay, accepted PadMapper and cockpit-fixed FPS counter. It prepares each
+view from the latest immutable state with the current XR head pose. Mech-camera
+movement is interpolated between publications using XrRig, as in the existing
+host. The simulation runs independently at 20 Hz. Death/abort ends the isolated
+mission without the spinning camera animation; saves and campaign handoff are
+not connected.
+
+This is a visible experiment, not feature parity: audio, glove interactions,
+custom cockpit instruments and 3D HUD inset views are missing. Reticle/marker
+planes currently use a fixed 300 m depth. Menus use left-stick navigation and
+A/right-trigger confirmation, without the pointer/virtual keyboard. Graphics
+preferences belong to the test origin; compare actual framebuffer dimensions,
+not only nominal scale settings, against normal gameplay.
+
+`window.mw2WorkerVr.snapshot()` exposes bounded adoption/HUD timings, worker
+metrics and QuestPerf XR callback/CPU statistics. `stall(600)` is an explicit
+manual diagnostic only; normal use never injects stalls. XR callback rates do
+not establish compositor or GPU frame rates. Private logs stay outside Git.
+
+
+First visible native-runtime observation: 4,320 retained XR intervals covering
+48.63 s, averaging 88.83 callbacks/s, at 1680x1760 per eye, fixed foveation 1.
+Presenter CPU mean/p95/p99 was 3.35/7.40/9.00 ms. The interval buffer is bounded;
+this is the retained portion of that mission, not a controlled before/after
+comparison. GPU/compositor times were unavailable. The mission ended normally,
+with no worker error recorded; subjective stereo/comfort confirmation remained
+pending. Missing audio/insets/custom cockpit make comparison with full gameplay
+incomplete. The visible fixture keeps the XR session at mission end and shows a restart
+button. Right-ray trigger or A activates it only after neutral input. Restart
+replaces the worker/mailbox epoch and scene resources without reloading the page.
+The initial launch remains paused until entering VR.
+
+During the first interactive test Android recorded an input-dispatch ANR in the
+embedded application. The exact native cause is not established. Automatic Vite
+page reload and repeated XR exit/re-entry are now avoided during this test; this
+is a mitigation, not proof that the runtime ANR is fixed. Raw ANR logs are private.
+
+
+The revised end/restart path was exercised on the Quest: ending the test showed
+the panel, then a restart produced advancing snapshots and two 1680x1760 eye
+views while the XR-session-entry counter stayed at one. The current callback
+counter returned to about 90/s. Controller neutral gating/button bounds have
+unit coverage; this brief lifecycle check does not establish long-run ANR freedom.
