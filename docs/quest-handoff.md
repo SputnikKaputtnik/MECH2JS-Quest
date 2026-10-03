@@ -2,7 +2,20 @@
 
 ## Start here
 
-**Latest verified change:** [identical replacement geometry reuse](quest-geometry-reuse.md)
+**Newest verified pacing change:** [FPS counter canvas upload](quest-fps-texture.md).
+Requesting a CPU-backed canvas removes the counter's expensive accelerated
+canvas-copy path while preserving the counter and page mirror. At 90 Hz in
+the complete after-render fixture, XR callbacks/s improve from 86.96 to 88.97
+and long entry gaps fall from 464 to 160 per retained 150 seconds. Restoring
+the default canvas returns to 86.67 callbacks/s and 502 gaps. Fresh source
+after restarting the app/server confirms 88.95 callbacks/s and 160 gaps.
+Measured same-process host
+wall work remains about 5.4–5.5 ms. No compositor/GPU-budget claim, no stable
+90 FPS claim, and no 72 Hz improvement claim. Read the linked evidence and
+limits before repeating tests. The production scheduler remains inline and
+the installed APK/release is unchanged.
+
+**Earlier verified change:** [identical replacement geometry reuse](quest-geometry-reuse.md)
 removes repeated GPU-mesh construction when the target widget recreates the same
 mech parts. In a full-game 72 Hz pair, callback-plus-deferred host time fell
 from 6.38 to 5.84 ms. A reversed-order pair confirmed 6.47 to 5.84 ms: an
@@ -32,9 +45,12 @@ GPU-completion wait is shorter in long intervals and overlaps other stages,
 so it cannot be added as a serial cost. Explicit Perfetto flow links now match
 a Chromium SyncToken wait/release pair in 113/114 long windows and 2,455/2,467
 ordinary windows. Pending token lifetime is 5.35 versus 1.11 ms, accounting
-for nearly all extra submit-to-swap delay in those matched groups. Next identify
-the producer commands delaying that release, plus native OpenXR wait/submit
-deadlines after swap; do not bypass the synchronization.
+for nearly all extra submit-to-swap delay in those matched groups. The next
+analysis identifies the game renderer's WebGL producer task and sleeping
+inside it; command tracing led to the FPS canvas fix above. Some long gaps
+remain: continue with native OpenXR wait/submit deadlines after swap and
+remaining producer work, rather than repeating the resolved canvas test.
+Do not bypass synchronization.
 Do not repeat that diagnostic as an FPS baseline; tracing adds overhead.
 Do not rerun the already completed runtime comparison just because its older
 protocol appears below; continue with the geometry evidence and open checks.

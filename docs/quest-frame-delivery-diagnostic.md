@@ -2,8 +2,9 @@
 
 The geometry-reuse change reduces measured host work, but the complete 90 Hz
 fixture still delivers about 87.5 XR callbacks/s. This diagnostic investigates
-where the remaining gaps occur. It does not change production code or the APK,
-and it does not establish a new FPS baseline.
+where the remaining gaps occur. The diagnostic captures do not establish a
+new FPS baseline. The subsequent [FPS canvas upload fix](quest-fps-texture.md)
+has separate uninstrumented comparisons; the APK is unchanged.
 
 ## Existing traces
 
@@ -289,3 +290,74 @@ not be confused with these Chromium SyncToken flow links.
 Private evidence: `quest-synctoken-pairs-20261003.csv`,
 `quest-synctoken-analysis-20261003.json`, and the reproducing helper
 `work/analyze-synctoken-pairs.mjs`.
+
+### Producer task behind the linked release
+
+Following each matched release's ancestors in the same clean trace locates
+the game renderer's `GPUTask`, through `WebGL` → `CommandBuffer::Flush` →
+`CommandBufferStub::OnAsyncFlush` → `CommandBufferService:PutChanged`.
+All 2,568 matched tasks belong to the same game renderer process. This is
+command-buffer processing in Chromium's GPU **process**, not GPU hardware time.
+
+| Mean wall-clock duration/state | Ordinary (2,455) | Long (113) |
+| --- | ---: | ---: |
+| Entire producer task | 1.49 ms | 5.00 ms |
+| Pending token time before task begins | 0.02 ms | 0.46 ms |
+| Pending token time inside task | 1.09 ms | 4.90 ms |
+| Producer thread running during entire task | 1.24 ms | 2.00 ms |
+| Producer thread runnable during entire task | 0.057 ms | 0.106 ms |
+| Producer thread sleeping during entire task | 0.19 ms | 2.89 ms |
+
+Scheduler coverage spans every matched task. Most of the added producer
+wall-clock time is sleep while processing WebGL commands. It is not simply
+a long wait for Chromium to schedule the task, nor a pure JavaScript cost.
+Driver/command dependencies remain candidates; the exact call is not proven
+by this capture. Private evidence: `quest-token-producer-20261003.csv`,
+`quest-token-producer-{rows,analysis}-20261003.json`,
+`quest-producer-state-analysis-20261003.json`; helpers
+`work/analyze-token-producer.mjs` and `work/analyze-producer-states.mjs`.
+
+### Command-level diagnostic and page-mirror hypothesis
+
+A separate 18-second system capture enables `disabled-by-default-gpu.decoder`
+and `disabled-by-default-gpu.service`; eight seconds include raw game events.
+It contains 659 recorded game callbacks and no raw-event overflow. Its
+command instrumentation adds overhead, so its callback rate is not compared
+with the uninstrumented baseline. Perfetto reports one conflicting track
+descriptor and no buffer-overrun/data-loss counter. Thread attribution for
+merged command tracks is therefore not used as proof of a causal chain.
+
+The service-side command spans include 88 `kCopySubTextureCHROMIUM` calls
+averaging 4.45 ms, whereas 1,476 `kBlitFramebufferCHROMIUM` calls average
+0.055 ms. The expensive copy is **not established as the game's mirror blit**.
+These are CPU-side service spans, not device timer results: Chromium's
+[GPU tracer source](https://raw.githubusercontent.com/chromium/chromium/main/gpu/command_buffer/service/gpu_tracer.cc)
+records service begin/end separately from the `gpu.device` timer category.
+That category was not enabled. Source inspection explains category semantics;
+it does not assert exact source/binary equivalence for this installed runtime.
+
+`GameScreen.mirrorEye()` copies the left eye onto the page's full drawing
+buffer after every immersive frame. This is a concrete optional workload to
+test, even though the trace does not prove it causes the delayed release.
+The A/B test below uses the existing `mirror.on` switch, identical private
+instrumentation in both conditions, and freshly restarted scratch missions.
+No synchronization primitive is removed. Command trace:
+`quest-decoder-timeline-20261003.{pftrace,json}`; private control helper:
+`work/mirror-variant-control.js`.
+
+Two 180-second full-game captures (first 30 seconds excluded) compared mirror
+on → off at verified 90 Hz, 1,680 × 1,760 per eye, FFR 1, DRS off and the same
+stationary automatic combat/instrument protocol. Actual mirror state was
+recorded in every snapshot. Both retained audio and both cockpit inset views.
+XR callbacks/s were **86.96 → 87.31**, combined callback/deferred host wall
+time **5.50 → 5.45 ms**, and long entry intervals **464 → 413** in the retained
+150 seconds. This small single-order difference does not establish a useful
+pacing gain; the mirror remains enabled and there is no production change.
+Private captures: `quest-mirror-{on,off}-90-20261003.jsonl` and matching
+`*-summary.json` files. Restore the mirror before subsequent experiments.
+
+The following [FPS counter canvas experiment](quest-fps-texture.md) removes
+the expensive copy commands while retaining the mirror and counter. It
+improves callback pacing in full-game comparisons, including a reversal to
+the default canvas path. It does not eliminate all long intervals or prove
+new hardware GPU budget.

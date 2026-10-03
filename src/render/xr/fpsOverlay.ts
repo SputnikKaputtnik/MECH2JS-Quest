@@ -18,7 +18,9 @@ export class FpsOverlay {
   constructor() {
     this.canvas.width = 512;
     this.canvas.height = 64;
-    this.context = this.canvas.getContext('2d')!;
+    // Keep this tiny, frequently uploaded texture CPU-backed. An accelerated
+    // canvas can force a synchronizing GPU copy during native XR submission.
+    this.context = this.canvas.getContext('2d', { willReadFrequently: true })!;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.generateMipmaps = false;
