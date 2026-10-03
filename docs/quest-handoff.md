@@ -8,9 +8,13 @@ mech parts. In a full-game 72 Hz pair, callback-plus-deferred host time fell
 from 6.38 to 5.84 ms. A reversed-order pair confirmed 6.47 to 5.84 ms: an
 8.6–9.8% reduction in this fixture, not a guarantee for every mission. The
 target images matched exactly and 800 replacements kept geometry counts flat.
-The actual APK/release is unchanged. A next useful measurement is the same
-complete workload at 90 Hz with reuse on/off; neither stable 90 Hz nor new GPU
-budget has been demonstrated, and occasional long intervals remain at 72 Hz.
+The actual APK/release is unchanged. The complete workload was also compared
+at 90 Hz: measured host work fell from 5.77 to 5.37 ms, while XR callbacks/s
+changed only from 87.37 to 87.57 and p99 entry intervals remained about 22 ms.
+That single-order pair does not establish a pacing improvement. Neither stable
+90 Hz nor new GPU budget has been demonstrated. The next useful investigation
+is a correlated application/browser/GPU-compositor timeline for the remaining
+missed deadlines; occasional long intervals remain even at 72 Hz.
 Do not rerun the already completed runtime comparison just because its older
 protocol appears below; continue with the geometry evidence and open checks.
 

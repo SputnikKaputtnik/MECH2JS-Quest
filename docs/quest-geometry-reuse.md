@@ -128,6 +128,56 @@ first pair's sampled live GPU geometry maximum was 51 for both variants.
 After testing, the bundled app origin was restored at 72 Hz; the development
 variant override was discarded with the test process. No new APK was installed.
 
+### 90 Hz follow-up
+
+The same complete embedded-runtime fixture was then measured at 90 Hz,
+reuse first and reference second, with a fresh scratch mission per variant.
+Each trace covers 180 seconds with the first 30 capture seconds excluded.
+The active display period was 11.111111 ms and both eye buffers remained
+1680 x 1760. Audio, custom cockpit, both inset views, FFR 1, DRS off,
+invulnerability and the automatic combat protocol were retained. The recorded
+main/inset reuse flags matched the intended variant in every warm sample.
+Neither detailed GPU profiling nor build-count wrappers ran.
+
+| 90 Hz, after warm-up | Reference (second) | Reuse (first) |
+| --- | ---: | ---: |
+| Visible XR callbacks | 13,107 | 13,137 |
+| XR callbacks/s | 87.37 | 87.57 |
+| Callback CPU mean | 4.40 ms | 4.30 ms |
+| Callback plus associated deferred work, mean | 5.77 ms | 5.37 ms |
+| Callback plus associated deferred work, p99 | 11.20 ms | 9.60 ms |
+| Simulation pass including inset views, mean | 5.43 ms | 4.11 ms |
+| Actual callback-entry interval p99 | 22.10 ms | 21.90 ms |
+| Longest actual callback-entry interval | 35.20 ms | 31.70 ms |
+| Callback-entry intervals >16.667 ms | 391 | 373 |
+| Mean callback draw calls | 55.92 | 55.83 |
+| Mean callback triangles | 38,787 | 38,857 |
+| Peak sampled live GPU geometries | 51 | 52 |
+
+Measured host work fell by 0.40 ms (7.0%), but the callback rate changed by
+only 0.20/s and the p99 entry interval still approached two refresh periods.
+This confirms that less repeated geometry work alone does not deliver stable
+90 Hz. These are callback measurements, not compositor FPS or GPU timings;
+the apparent unused part of the 11.11 ms interval is not proven GPU headroom.
+The next investigation should locate the remaining missed deadlines across
+application work, browser scheduling and GPU/compositor activity rather than
+assume that the remaining mean simulation cost explains them.
+
+Both traces completed without overflow, XR visibility loss or callback stalls.
+Maximum sampled pose offset was 3.33 mm / 0.072 degrees for reuse and
+4.09 mm / 0.098 degrees for reference. Thermal status was 0 in all three
+reads; current HAL SoC temperature rose from 55.13 to 57.18 to 58.14 degrees C.
+This pair has not been repeated in reverse order or at controlled temperature
+and frequency. Combat and exact capture-start phase are not deterministic,
+so the small callback-rate difference is not a demonstrated pacing gain.
+Do not compare the lower per-callback mean directly with 72 Hz: the same
+20 Hz simulation work is spread over more callbacks at 90 Hz.
+
+Private traces: `quest-geometry-reuse-{on,off}-90-20261003.jsonl`, their
+`*-summary-20261003.json` files, and `quest-geometry-90-*-thermal-20261003.txt`.
+The bundled app was restored at 72 Hz afterward, with no GPU profiler active.
+No production code or APK changed in this follow-up.
+
 ## Evidence and limits
 
 The autonomous native-runtime image/resource suite completed. For this change,
