@@ -2,6 +2,19 @@
 
 ## Start here
 
+**Latest measurement correction:** [recorder overhead](quest-recorder-overhead.md).
+Periodic snapshot/raw-read calls cost 8.94 ms average on the headset main
+thread, outside the timed game callback; 62/83 long intervals overlap them.
+With the same installed frontend/settings, buffered 72 Hz inline captures
+deliver 71.95 and 71.94 XR callbacks/s with 10 and 16 long entry intervals per
+150 seconds, versus 71.56 and 83 with periodic collection. This improves the
+measurement, not the game. Use `quest-frame-record.mjs ... 180 --auto-fire
+--buffered` for subsequent short pacing comparisons; it checks state only at
+the endpoints and rejects overflow/mission replacement. Do not mix collector
+modes or interpret earlier remaining-gap counts as unobserved gameplay limits.
+Remaining gaps and hardware graphics budget are still open. Installed APK,
+72 Hz setting and public release remain unchanged in this step.
+
 **Newest verified pacing change:** [FPS counter canvas upload](quest-fps-texture.md).
 Requesting a CPU-backed canvas removes the counter's expensive accelerated
 canvas-copy path while preserving the counter and page mirror. At 90 Hz in

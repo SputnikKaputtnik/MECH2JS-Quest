@@ -5,7 +5,12 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const output = process.argv[2], seconds = Number(process.argv[3] ?? 300);
-if (!output || !Number.isFinite(seconds) || seconds < 5 || seconds > 900) throw Error('Usage: node tools/quest-frame-record.mjs <private.jsonl> [seconds=300] [--gpu] [--auto-fire]');
+const buffered = process.argv.includes('--buffered');
+if (!output || !Number.isFinite(seconds) || seconds < 5 || seconds > 900) throw Error('Usage: node tools/quest-frame-record.mjs <private.jsonl> [seconds=300] [--gpu] [--auto-fire] [--buffered]');
+// At up to 120 Hz, two events/frame for 240 s fit the existing 65,536-event ring.
+// Still reject any actual overflow below; do not silently truncate a capture.
+if (buffered && seconds > 240) throw Error('Buffered captures must be at most 240 seconds');
+if (!buffered) console.warn('Streaming snapshots add headset main-thread work; use --buffered (<=240 s) for callback-pacing comparisons.');
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const relative = path.relative(repo, path.resolve(output));
 if (!relative || (!relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))) throw Error('Output must be outside repository');
@@ -39,8 +44,11 @@ try {
   const autoFire = process.argv.includes('--auto-fire');
   fd = fs.openSync(output, 'wx');
   const displayPeriod = execFileSync(adb, [...device, 'shell', 'dumpsys', 'SurfaceFlinger', '--latency'], { encoding: 'utf8', windowsHide: true }).split(/\r?\n/)[0];
-  cursor = await evaluate(`window.mw2QuestPerf.trace.start(); window.mw2FullGameTest.autoFire(${autoFire}); window.mw2QuestPerf.trace.read().cursor`);
+  const started = await evaluate(`(()=>{window.mw2QuestPerf.trace.start();window.mw2FullGameTest.autoFire(${autoFire});const raw=window.mw2QuestPerf.trace.read();return {id:raw.id,cursor:raw.cursor}})()`);
+  cursor = started.cursor; traceId = started.id;
   write({ kind: 'metadata', url: target.url, cdpOrigin, seconds, autoFire, before, displayPeriodNs: Number(displayPeriod),
+    collectionMode: buffered ? 'buffered' : 'streaming',
+    stateVerification: buffered ? 'endpoints-only; no periodic CDP reads during capture' : 'periodic-snapshots',
     note: 'GPU samples are device-wide with host receipt timestamps, not per-frame GPU durations. Display period must also be checked while XR is active.' });
   if (process.argv.includes('--gpu')) {
     gpu = spawn(adb, [...device, 'shell', 'timeout', String(Math.ceil(seconds) + 5), 'ovrgpuprofiler', '-r=2,17'], { windowsHide: true });
@@ -49,15 +57,20 @@ try {
     gpu.on('error', error => write({ kind: 'device-gpu-error', error: String(error) }));
   }
   const deadline = Date.now() + seconds * 1000;
-  while (!stop) {
-    const row = await evaluate(`({state:window.mw2FullGameTest.snapshot(),raw:window.mw2QuestPerf.trace.read(${cursor})})`);
-    if (traceId && traceId !== row.raw.id) throw Error('Mission/trace changed during recording');
+  for (;;) {
+    if (buffered) {
+      // Wait on the host, leaving the headset's main thread alone. End the raw
+      // trace before computing percentiles or serializing its buffered events.
+      while (!stop && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, Math.min(2000, deadline - Date.now())));
+    }
+    const row = await evaluate(`(()=>{${buffered ? 'window.mw2QuestPerf.trace.stop();' : ''}const start=performance.now();const state=window.mw2FullGameTest.snapshot(),raw=window.mw2QuestPerf.trace.read(${cursor});return {state,raw,collection:{start,end:performance.now()}}})()`);
+    if (traceId !== row.raw.id || row.state.epoch !== before.epoch) throw Error('Mission/trace changed during recording');
     traceId = row.raw.id; cursor = row.raw.cursor;
     write({ kind: 'sample', ...row });
     if (row.raw.dropped) throw Error('Raw trace overflow: capture is incomplete');
     if (!row.state.xrVisible || row.state.mode !== 'play' || row.state.perf.status !== 'recording') throw Error('Mission stopped or XR not visible');
     if (!Number.isFinite(row.state.perf.lastFrameAgeMs) || row.state.perf.lastFrameAgeMs > 1000) throw Error('XR callbacks stalled');
-    if (Date.now() >= deadline) break;
+    if (buffered || stop || Date.now() >= deadline) break;
     await new Promise(resolve => setTimeout(resolve, Math.min(2000, deadline - Date.now())));
   }
   write({ kind: 'complete', cursor, interrupted: stop });

@@ -1,5 +1,12 @@
 # FPS counter canvas upload — 2026-10-03
 
+**Measurement follow-up:** the comparisons below used periodic log collection,
+which was subsequently found to introduce frame delays itself. See
+[recorder overhead](quest-recorder-overhead.md): the same optimized frontend
+reaches 71.94–71.95 XR callbacks/s with 10–16 long intervals per 150 seconds
+when raw data are read after capture. Preserve the original A/B evidence here,
+but do not treat its absolute rates/gap counts as an unobserved gameplay limit.
+
 The cockpit FPS counter now requests a CPU-backed 2D canvas with
 `willReadFrequently: true`. Its text, colour thresholds, mission average,
 position, update policy, texture resolution and material are unchanged.

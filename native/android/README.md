@@ -68,6 +68,11 @@ pilot saves through the setup page before migrating them.
 
 ## Verified and remaining work
 
+- Subsequent [collector-overhead checks](../../docs/quest-recorder-overhead.md)
+  show the installed optimized frontend at 71.94–71.95 XR callbacks/s with
+  10–16 long intervals per 150 seconds when logging is buffered. Periodic
+  snapshots caused most of the remaining measured delays below. No APK change
+  was needed for the recorder correction; compositor FPS remains unverified.
 - The 2026-10-03 frontend update includes geometry reuse and a CPU-backed FPS
   canvas. A complete 72 Hz inline fixture pair improves 71.01 → 71.61 XR
   callbacks/s and 181 → 81 long entry intervals per 150 seconds. See the

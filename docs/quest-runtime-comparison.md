@@ -1,5 +1,11 @@
 # Quest Browser versus embedded runtime
 
+**Collector update:** the historical periodic recorder below adds main-thread
+work. Use the [buffered protocol](quest-recorder-overhead.md) for new short
+pacing comparisons, with matching collection modes and explicit endpoint
+verification limits. The old commands remain documentation of those captures;
+do not compare their absolute rates directly with buffered results.
+
 The old Browser/native FPS reports used different missions, phases and actual
 eye buffers. They do not isolate a runtime regression. This experiment uses the
 same full-game development fixture and scheduling mode in both runtimes.

@@ -1,5 +1,12 @@
 # Full-game 72 Hz scheduling experiment
 
+**Collector update:** the historical periodic recorder used below perturbs
+callback pacing. For new short pacing comparisons use `180 --auto-fire
+--buffered`; keep the same collection mode across variants. See
+[recorder overhead and endpoint-verification limits](quest-recorder-overhead.md).
+Historical commands/results below are retained as provenance, not the current
+recommended pacing protocol.
+
 The worker prototype is preserved, but further worker integration is paused.
 The current goal is stable 72 Hz with measurable headroom in the complete game.
 Neither moving work outside a callback nor requesting 72 Hz proves a speedup.
