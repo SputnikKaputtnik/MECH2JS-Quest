@@ -2,6 +2,20 @@
 
 ## Start here
 
+**Latest scheduling follow-up:** [buffered comparison](quest-buffered-scheduling.md).
+After-render → inline → after-render at 72 Hz gives 5 → 22 → 3 long entry
+intervals per retained 150 seconds and 71.986 → 71.892 → 71.965 XR callbacks/s.
+Entry p99 improves 17.4 → 14.6–14.7 ms, but total host work does not improve
+reliably (5.60/5.87/5.93 ms). CPU-side pass-to-render handoff is about 5.3 ms
+later when deferred. All runs sustain 20 simulation passes/s. Keep inline as
+the normal default; no APK update. Rare 70.2/67.8 ms gaps persist in both
+modes. The deferred one follows only 4.6 ms rendering + 0.2 ms no-pass work,
+leaving 62.3 ms outside that work: the next useful diagnostic targets these
+pauses rather than attributing them to simulation. The earlier 30-second
+system trace's two gaps were analyzed offline; they do not explain the new
+large stalls. Quest is restored to ordinary native start at 72 Hz, profiling
+off, automation paused. No new graphics-budget/compositor-FPS claim.
+
 **Latest measurement correction:** [recorder overhead](quest-recorder-overhead.md).
 Periodic snapshot/raw-read calls cost 8.94 ms average on the headset main
 thread, outside the timed game callback; 62/83 long intervals overlap them.

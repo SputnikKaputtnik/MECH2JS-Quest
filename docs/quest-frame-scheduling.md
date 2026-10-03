@@ -1,5 +1,10 @@
 # Full-game 72 Hz scheduling experiment
 
+**Latest follow-up:** [buffered scheduling comparison](quest-buffered-scheduling.md)
+rechecks the remaining pacing gain after geometry/canvas fixes, without periodic
+log reads, and measures simulation-state handoff delay. The original large gain
+below is historical and is not the current expected improvement.
+
 **Collector update:** the historical periodic recorder used below perturbs
 callback pacing. For new short pacing comparisons use `180 --auto-fire
 --buffered`; keep the same collection mode across variants. See

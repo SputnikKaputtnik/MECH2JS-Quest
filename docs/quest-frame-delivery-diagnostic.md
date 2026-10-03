@@ -1,5 +1,10 @@
 # Remaining XR callback gaps — 2026-10-03
 
+**Post-fix follow-up:** [buffered scheduling and residual diagnostic](quest-buffered-scheduling.md)
+examines the two long intervals in the later 72 Hz system capture. Earlier
+results below predate the FPS canvas fix; periodic reference logs additionally
+include [collector overhead](quest-recorder-overhead.md).
+
 The geometry-reuse change reduces measured host work, but the complete 90 Hz
 fixture still delivers about 87.5 XR callbacks/s. This diagnostic investigates
 where the remaining gaps occur. The diagnostic captures do not establish a
