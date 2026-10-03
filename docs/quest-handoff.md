@@ -2,6 +2,21 @@
 
 ## Start here
 
+**Device reservation:** The user has reserved the Quest for Claude's other
+project. Continue offline only until a new exclusive test window is agreed:
+no ADB/CDP, app launches, installs, device settings or device-server restarts.
+Automation remains paused. Do not interpret older device-state notes below
+as permission to access the headset now.
+
+**Latest offline change:** [preallocated raw trace storage](quest-trace-storage.md).
+The opt-in recorder now stores numeric events in a fixed 7 MiB maximum buffer
+allocated before capture, instead of retaining up to 65,536 event objects.
+Exact export/cursor/wrap tests and the frontend build pass. Host measurements
+show reduced retained memory and recorder CPU cost, not a Quest FPS gain or
+an explanation of the rare stalls. This source change is not installed on the
+Quest. A transform-cache renderer experiment was measured and rejected; the
+renderer and accepted gameplay remain unchanged in this step.
+
 **Latest renderer change:** [cockpit screen batching](quest-cockpit-screen-batching.md).
 Eleven glass pieces become one draw per eye; cockpit calls fall 18 → 8 per eye
 and total callback calls about 60 → 40. Six actual-Quest offscreen eye/state
