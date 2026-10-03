@@ -16,6 +16,11 @@ queries are unavailable (`EXT_disjoint_timer_query_webgl2` absent). The page
 mirror was already a negative control; AMY_SCN1 has no active shadow map, so
 neither was remeasured as an optimization target. See linked evidence before
 repeating these comparisons.
+This frontend is now installed in the standalone APK (source `6e5f9e6`, app
+`b750f521…`, JS `index-BWrPSktO.js`), with native libraries/DEX unchanged and
+all 19 saved files/10 preferences preserved. Normal bundled visible VR/two-view
+startup is verified. Quest is back at its normal start screen at 72 Hz;
+profiling is off, automation remains paused, public release unchanged.
 
 **Latest scheduling follow-up:** [buffered comparison](quest-buffered-scheduling.md).
 After-render → inline → after-render at 72 Hz gives 5 → 22 → 3 long entry

@@ -81,3 +81,22 @@ and matching summaries; `quest-cockpit-batch-comparison-20261003.jsonl`;
 `work/cockpit-batch-variant-control.js`, `work/compare-cockpit-batch-images.js`
 and `work/compare-buffered-scheduling.mjs`. The unverified initial image file
 is retained only as rejected diagnostic evidence.
+
+## Standalone deployment
+
+Source `6e5f9e6` is installed in the existing standalone app. The pinned runtime,
+signature and alignment checks pass; all 16 native-library/DEX entries are
+SHA-256-identical to the previously installed frontend build. App inventory ID
+is `b750f5212246c864393a9bfadcdffda387389ca168074e7bcc6008bc5bf8c7f6`;
+the native origin loads `index-BWrPSktO.js` without a service-worker controller.
+All 19 saved files and 10 preferences match before/after installation.
+
+Normal bundled VR entry reports a visible session with two views and advancing
+callbacks (1,141 → 3,117), at a verified 13,888,888 ns display period. This
+startup smoke is not a mission FPS run or human stereo/controller acceptance.
+The app is restored to its normal start screen at 72 Hz after testing.
+No detailed profiling or automation is enabled. The public release is unchanged.
+
+Private deployment evidence: `quest-cockpit-installed-{startup,xr-start,xr-end}-20261003.json`,
+private save snapshots, and `work/android-runtime/cockpit-apk-audit-20261003.json`.
+The prior APK is retained as `MECH2-Quest-before-cockpit-20261003.apk` outside Git.

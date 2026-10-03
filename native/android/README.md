@@ -68,6 +68,12 @@ pilot saves through the setup page before migrating them.
 
 ## Verified and remaining work
 
+- The subsequent [cockpit screen batching update](../../docs/quest-cockpit-screen-batching.md)
+  is installed (source `6e5f9e6`, app `b750f521…`). Pixel-identical cockpit
+  displays need 20 fewer draws across both eyes; buffered 90 Hz comparisons
+  show a small pacing benefit, not reliable total host-time savings. All
+  runtime/DEX hashes and 19 saved files/10 preferences are preserved. Bundled
+  visible VR entry with two views is verified; normal operation remains 72 Hz.
 - Subsequent [collector-overhead checks](../../docs/quest-recorder-overhead.md)
   show the installed optimized frontend at 71.94–71.95 XR callbacks/s with
   10–16 long intervals per 150 seconds when logging is buffered. Periodic
