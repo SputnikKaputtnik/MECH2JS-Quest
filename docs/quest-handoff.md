@@ -2,6 +2,21 @@
 
 ## Start here
 
+**Latest renderer change:** [cockpit screen batching](quest-cockpit-screen-batching.md).
+Eleven glass pieces become one draw per eye; cockpit calls fall 18 → 8 per eye
+and total callback calls about 60 → 40. Six actual-Quest offscreen eye/state
+comparisons are byte-identical. Full-game buffered inline 90 Hz reference →
+batched → reference gives 88.450 → 88.970 → 88.355 XR callbacks/s, but host
+wall time 5.550/5.493/5.478 ms does not establish a compute saving. Retain this
+small pacing/submission improvement without promising stable 90 or new GPU
+budget. All cockpit designs/touch targets, dynamic pane uniforms and disposal
+are covered by focused tests; production frontend builds. The normal schedule
+remains inline, and the accepted display setting remains 72 Hz. Runtime timer
+queries are unavailable (`EXT_disjoint_timer_query_webgl2` absent). The page
+mirror was already a negative control; AMY_SCN1 has no active shadow map, so
+neither was remeasured as an optimization target. See linked evidence before
+repeating these comparisons.
+
 **Latest scheduling follow-up:** [buffered comparison](quest-buffered-scheduling.md).
 After-render → inline → after-render at 72 Hz gives 5 → 22 → 3 long entry
 intervals per retained 150 seconds and 71.986 → 71.892 → 71.965 XR callbacks/s.

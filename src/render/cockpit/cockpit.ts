@@ -24,6 +24,7 @@
  * @portOnly
  */
 import * as THREE from 'three';
+import { CockpitScreenBatch } from './screenBatch.ts';
 import { OverrideButton } from './overrideButton.ts';
 import { RadarTouchSurface, type CockpitTouchTarget } from './touchSurface.ts';
 import { cropRect, fitRect, MAT_COUNT, Mat, PANE_WIDGETS, type CockpitDesign, type Kit, type PaneName, type Slot } from './kit.ts';
@@ -120,8 +121,15 @@ void main() { outColor = vec4(texelFetch(uPalette, ivec2(vIdx & 255, 0), 0).rgb,
 `;
 const screenVertex = /* glsl */ `
 out vec2 vUv;
+#ifdef MW2_SCREEN_BATCH
+in float aScreen;
+flat out int vScreen;
+#endif
 void main() {
   vUv = uv;
+#ifdef MW2_SCREEN_BATCH
+  vScreen = int(aScreen + 0.5);
+#endif
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -131,8 +139,16 @@ precision highp int;
 uniform sampler2D uPalette;
 ${WINDOW_GLSL}
 uniform vec2 uWindowSize;
+#ifdef MW2_SCREEN_BATCH
+flat in int vScreen;
+uniform vec4 uRects[MW2_SCREEN_BATCH];
+uniform vec4 uFits[MW2_SCREEN_BATCH];
+#define uRect uRects[vScreen]
+#define uFit uFits[vScreen]
+#else
 uniform vec4 uRect;          // the piece of the pane: x, y, w, h in window pixels
 uniform vec4 uFit;           // where it sits in the slot: u0, v0, u1, v1 (v down)
+#endif
 uniform int uBlank;          // the unlit glass
 in vec2 vUv;
 out vec4 outColor;
@@ -152,7 +168,7 @@ void main() {
 
 interface ScreenMesh {
   slot: Slot;
-  mesh: THREE.Mesh;
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   mat: THREE.ShaderMaterial;
   /** width / height of the slot */
   aspect: number;
@@ -186,6 +202,9 @@ export class CockpitRenderer {
   private readonly mats = Array.from({ length: MAT_COUNT }, () => new THREE.Vector4(0x40, 0, -1, 0));
   private design: CockpitDesign | null = null;
   private screens: ScreenMesh[] = [];
+  /** Reference path retained for image/performance comparisons. */
+  batchScreens = true;
+  private screenBatch: CockpitScreenBatch | null = null;
   overrideButton: OverrideButton | null = null;
   private radarTouch: RadarTouchSurface | null = null;
   readonly touchTargets: CockpitTouchTarget[] = [];
@@ -219,6 +238,8 @@ export class CockpitRenderer {
       this.anchor.add(g);
       this.parts.set(name, g);
     }
+    this.screenBatch = new CockpitScreenBatch(this.screens.map(s => s.mesh));
+    this.screenBatch.setEnabled(this.batchScreens);
   }
 
   /** The colours the materials resolve to (see CockpitColours; ramps as index & 0xf0). */
@@ -242,6 +263,7 @@ export class CockpitRenderer {
    */
   update(anchor: THREE.Matrix4, panes: Record<PaneName, Pane | null>, controls: CockpitControls): void {
     if (!this.design) return this.hide();
+    this.screenBatch?.setEnabled(this.batchScreens);
     this.scene.visible = true;
     this.anchor.matrix.copy(anchor);
     this.anchor.matrixWorldNeedsUpdate = true;
@@ -339,6 +361,8 @@ export class CockpitRenderer {
   }
 
   private clear(): void {
+    this.screenBatch?.dispose();
+    this.screenBatch = null;
     this.overrideButton?.dispose();
     this.overrideButton = null;
     this.radarTouch?.dispose();
