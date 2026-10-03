@@ -13,8 +13,13 @@ at 90 Hz: measured host work fell from 5.77 to 5.37 ms, while XR callbacks/s
 changed only from 87.37 to 87.57 and p99 entry intervals remained about 22 ms.
 That single-order pair does not establish a pacing improvement. Neither stable
 90 Hz nor new GPU budget has been demonstrated. The next useful investigation
-is a correlated application/browser/GPU-compositor timeline for the remaining
-missed deadlines; occasional long intervals remain even at 72 Hz.
+is runtime delivery/fence/compositor correlation. A first
+[Chromium timeline diagnostic](quest-frame-delivery-diagnostic.md) is complete:
+77 matched late intervals were already late at the main-thread WebXR receipt
+handler; most gaps were not filled by recorded main-thread tasks. One major GC
+contributed to the worst outlier, but GC did not explain most gaps. GPU duration,
+upstream delivery versus queued receipt, and compositor deadlines remain open.
+Do not repeat that diagnostic as an FPS baseline; tracing adds overhead.
 Do not rerun the already completed runtime comparison just because its older
 protocol appears below; continue with the geometry evidence and open checks.
 
