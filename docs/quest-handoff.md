@@ -10,10 +10,16 @@ and long entry gaps fall from 464 to 160 per retained 150 seconds. Restoring
 the default canvas returns to 86.67 callbacks/s and 502 gaps. Fresh source
 after restarting the app/server confirms 88.95 callbacks/s and 160 gaps.
 Measured same-process host
-wall work remains about 5.4–5.5 ms. No compositor/GPU-budget claim, no stable
-90 FPS claim, and no 72 Hz improvement claim. Read the linked evidence and
-limits before repeating tests. The production scheduler remains inline and
-the installed APK/release is unchanged.
+wall work remains about 5.4–5.5 ms. A subsequent clean **72 Hz inline** pair
+confirms 71.01 → 71.61 callbacks/s and 181 → 81 entry gaps over 20.833 ms per
+150 seconds; p99 improves 26.8 → 18.8 ms. No compositor/GPU-budget or perfectly
+stable FPS claim. The new frontend is now installed in the standalone APK;
+all runtime libraries/DEX are unchanged, 19 saved files and 10 preferences
+survive the update, and normal bundled VR entry reports visible advancing
+XR with two views. App ID `91aaaebd…`, source `4973a69`. The public GitHub
+release is unchanged. Read the linked evidence before repeating tests.
+Normal scheduling remains inline, detailed profiling is off, refresh is 72,
+and the app is back at its ordinary start screen.
 
 **Earlier verified change:** [identical replacement geometry reuse](quest-geometry-reuse.md)
 removes repeated GPU-mesh construction when the target widget recreates the same
@@ -21,7 +27,9 @@ mech parts. In a full-game 72 Hz pair, callback-plus-deferred host time fell
 from 6.38 to 5.84 ms. A reversed-order pair confirmed 6.47 to 5.84 ms: an
 8.6–9.8% reduction in this fixture, not a guarantee for every mission. The
 target images matched exactly and 800 replacements kept geometry counts flat.
-The actual APK/release is unchanged. The complete workload was also compared
+Those earlier measurements did not replace the APK/release. Geometry reuse
+is included in the subsequent installed update described above. The complete
+workload was also compared
 at 90 Hz: measured host work fell from 5.77 to 5.37 ms, while XR callbacks/s
 changed only from 87.37 to 87.57 and p99 entry intervals remained about 22 ms.
 That single-order pair does not establish a pacing improvement. Neither stable

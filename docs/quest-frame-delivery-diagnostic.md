@@ -4,7 +4,7 @@ The geometry-reuse change reduces measured host work, but the complete 90 Hz
 fixture still delivers about 87.5 XR callbacks/s. This diagnostic investigates
 where the remaining gaps occur. The diagnostic captures do not establish a
 new FPS baseline. The subsequent [FPS canvas upload fix](quest-fps-texture.md)
-has separate uninstrumented comparisons; the APK is unchanged.
+has separate uninstrumented comparisons and a later verified APK update.
 
 ## Existing traces
 

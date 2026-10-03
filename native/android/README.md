@@ -7,9 +7,10 @@ embedded web engine, not a C/C++ rewrite of the simulation.
 
 The current package is a development prototype. Wolvic's window UI and its
 first-run notices are still present before **Start in VR**. This is not yet a
-polished direct-to-cockpit launcher. No performance improvement is claimed.
+polished direct-to-cockpit launcher. Embedding this runtime is not itself
+claimed to improve performance over Quest Browser.
 
-For current worker experiments, open runtime failures and measurement limits,
+For current performance experiments, open runtime failures and measurement limits,
 read the [Quest development handoff](../../docs/quest-handoff.md). The USB-served
 worker test route is separate from this APK's bundled full-game frontend.
 
@@ -67,6 +68,13 @@ pilot saves through the setup page before migrating them.
 
 ## Verified and remaining work
 
+- The 2026-10-03 frontend update includes geometry reuse and a CPU-backed FPS
+  canvas. A complete 72 Hz inline fixture pair improves 71.01 → 71.61 XR
+  callbacks/s and 181 → 81 long entry intervals per 150 seconds. See the
+  [FPS texture evidence](../../docs/quest-fps-texture.md) for protocol/limits.
+  The installed update preserves all runtime/DEX hashes, 19 saved files and
+  10 preferences; bundled VR startup reports visible advancing XR with two
+  views. This is not compositor FPS or a new hardware GPU-budget measurement.
 - Quest 3 installation, embedded OpenXR entry and both controller input sources
   have been observed. The user confirmed correct stereo after the DRS workaround.
 - Migration was verified across a full app force-stop/restart: all 19 exported
