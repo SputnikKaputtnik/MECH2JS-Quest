@@ -24,6 +24,17 @@ entries versus 10.94 ms for ordinary entries. Native GPU-completion waits are
 visible, but they are not pure GPU durations or proven causes of the gaps.
 Frame/fence/deadline correlation remains open. The first 64 MiB system trace
 lost metadata and was rejected; use the subsequent `*-clean-*` capture only.
+Offline event-chain analysis now localizes much of the extra delay to submit
+end → Chromium buffer-swap start (2.14 ms ordinary / 6.46 ms long) and swap
+start → native buffer acquisition (3.30 / 7.54 ms). `CrGpuMain` CPU work in the
+first segment is 1.48 / 3.01 ms; this is not hardware GPU time. The recorded
+GPU-completion wait is shorter in long intervals and overlaps other stages,
+so it cannot be added as a serial cost. Explicit Perfetto flow links now match
+a Chromium SyncToken wait/release pair in 113/114 long windows and 2,455/2,467
+ordinary windows. Pending token lifetime is 5.35 versus 1.11 ms, accounting
+for nearly all extra submit-to-swap delay in those matched groups. Next identify
+the producer commands delaying that release, plus native OpenXR wait/submit
+deadlines after swap; do not bypass the synchronization.
 Do not repeat that diagnostic as an FPS baseline; tracing adds overhead.
 Do not rerun the already completed runtime comparison just because its older
 protocol appears below; continue with the geometry evidence and open checks.

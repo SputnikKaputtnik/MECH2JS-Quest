@@ -181,3 +181,111 @@ its SHA-256 was verified against the official v58.2 wrapper manifest before
 execution. No traces were uploaded. The bundled app was restored at 72 Hz;
 `perfetto --query` confirmed zero active tracing sessions. The absence-window
 automation remains paused; this follow-up was explicitly requested in chat.
+
+## Submit-to-buffer chain, analyzed offline
+
+A further user-requested investigation reused the complete system capture; no
+new headset run was needed. Between every pair of consecutive game callback
+entries there is exactly one of each selected event: renderer
+`XRFrameProvider::SubmitFrame`, Chromium `WvrThread`'s
+`NativeViewGLSurfaceEGL:RealSwapBuffers`, the numbered native GPU-completion
+wait, `VRB Render`'s `acquireBuffer`, and `OnImmersiveFrameData`.
+All 2,581 intervals match this temporal association, comprising 114 long
+intervals and 2,467 ordinary intervals. This is not a shared frame/fence ID;
+the events must not be presented as a proven causal chain.
+
+| Mean wall-clock interval | Ordinary | Long (>16.667 ms) |
+| --- | ---: | ---: |
+| Game callback entry to next entry | 11.19 ms | 20.84 ms |
+| Entry to `SubmitFrame` start | 4.41 ms | 5.47 ms |
+| `SubmitFrame` CPU-side span | 0.47 ms | 0.51 ms |
+| Submit end to `RealSwapBuffers` start | 2.14 ms | 6.46 ms |
+| Swap start to native `acquireBuffer` start | 3.30 ms | 7.54 ms |
+| Acquire start to WebXR receipt handler | 0.28 ms | 0.24 ms |
+| Receipt handler to next game entry | 0.60 ms | 0.63 ms |
+
+The extra time is concentrated before the buffer swap and before native buffer
+acquisition. These are host/runtime event boundaries, not actual display
+presentation timestamps. Applying the same scheduler-state intersection to
+these smaller windows gives complete coverage for all four relevant threads:
+
+| State inside submit-end → swap-start window | Ordinary | Long |
+| --- | ---: | ---: |
+| `CrGpuMain` running on CPU | 1.48 ms | 3.01 ms |
+| `CrGpuMain` interruptible sleep | 0.58 ms | 3.29 ms |
+| `WvrThread` interruptible sleep | 1.63 ms | 5.88 ms |
+| `VRB Render` interruptible sleep | 2.14 ms | 6.46 ms |
+
+During the subsequent swap-start → acquire-start window, `VRB Render` sleeps
+2.81 ms ordinarily and 7.10 ms in long intervals; its CPU execution is 0.46
+and 0.42 ms respectively. `CrGpuMain` executes less than 0.004 ms on average
+in either group during this later window. That does not mean the GPU hardware
+is idle: CPU-side command execution and GPU execution are different stages.
+
+The observed GPU-completion wait itself averages **4.28 ms ordinarily but
+1.38 ms for long intervals**. This cannot be interpreted as less GPU work in
+the long frames: the waiter starts later in the pipeline and measures only
+the remaining wait. Moreover, native acquisition starts before that wait
+ends in 2,012 ordinary intervals and three long intervals. The wait is
+therefore not a universal gate on native acquisition, and its duration must
+not simply be added to the non-overlapping wall-clock intervals above.
+
+The evidence prioritizes command/synchronization dependencies between
+WebXR submission and Chromium's buffer swap, followed by native frame pacing.
+It does not establish which dependency is responsible, nor prove a fix in
+the renderer, Wolvic or OpenXR. The SyncToken links available in this capture
+are analyzed below; exact preceding commands and OpenXR wait/submit deadlines
+remain unresolved. More
+changes to average simulation cost alone are not justified by these gaps.
+
+The local Wolvic source has a one-frame-ahead path in `BrowserWorld::TickImmersive`:
+it waits for the browser frame result, calls the device's `StartFrame`, pushes
+the next poses and later draws/submits. Its OpenXR implementation calls
+`xrWaitFrame` and `xrBeginFrame` in `StartFrame`. This is context for selecting
+instrumentation points, not proof of the exact call duration or installed
+binary behavior; these OpenXR calls were not directly traced here.
+
+Additional private files are `quest-native-frame-chain-20261003.csv`,
+`quest-native-frame-chain-{rows,analysis}-20261003.json`,
+`quest-native-chain-thread-states-20261003.csv`, and
+`quest-native-chain-state-analysis-20261003.json`. Reproduce with
+`work/analyze-native-frame-chain.mjs` and `work/analyze-chain-states.mjs`.
+Normal app state remains 72 Hz, zero Perfetto sessions, detailed GPU profiling
+disabled. No code, game setting, or APK changed during this offline follow-up.
+
+### Explicit SyncToken flow links
+
+The same Perfetto trace also contains explicit `flow` links from
+`SyncToken::Wait` on `Chrome_ChildIOThread` to `SyncToken::Release` on
+`CrGpuMain`. Unlike the temporal event-chain association above, these links
+identify related synchronization events. Their assignment to a game frame
+still uses the surrounding submit-end → swap-start window.
+
+Exactly one linked pair fits inside 113 of the 114 long windows and 2,455 of
+the 2,467 ordinary windows. Thirteen unmatched windows are excluded rather
+than guessed to have zero waiting time. Each matched window decomposes into:
+
+| Mean duration in matched windows | Ordinary | Long |
+| --- | ---: | ---: |
+| Submit end → token wait registration | 0.31 ms | 0.30 ms |
+| Token wait registration → linked release | 1.11 ms | 5.35 ms |
+| Linked release → buffer swap start | 0.72 ms | 0.81 ms |
+| Total submit-end → swap-start | 2.14 ms | 6.46 ms |
+
+The extra 4.24 ms in the token lifetime accounts for nearly all of the 4.32 ms
+extra submit-to-swap latency in these matched groups. This locates a concrete
+synchronization boundary, not merely an unexplained JavaScript sleep. The
+wait/release events themselves are short CPU events; subtracting their start
+timestamps measures the dependency's pending lifetime, not time spent running
+a blocking function or hardware GPU execution.
+
+It does **not** yet identify the producer commands delaying release, nor make
+the SyncToken unnecessary. Do not bypass synchronization as an optimization.
+The next useful investigation is the command-buffer work/dependencies that
+precede this release, alongside native OpenXR pacing after buffer swap. The
+native `GPU completion` fence-wait spans are a separate measurement and must
+not be confused with these Chromium SyncToken flow links.
+
+Private evidence: `quest-synctoken-pairs-20261003.csv`,
+`quest-synctoken-analysis-20261003.json`, and the reproducing helper
+`work/analyze-synctoken-pairs.mjs`.
