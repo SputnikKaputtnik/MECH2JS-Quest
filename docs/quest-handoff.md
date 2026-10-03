@@ -2,11 +2,16 @@
 
 ## Start here
 
-**Device reservation:** The user has reserved the Quest for Claude's other
-project. Continue offline only until a new exclusive test window is agreed:
-no ADB/CDP, app launches, installs, device settings or device-server restarts.
-Automation remains paused. Do not interpret older device-state notes below
-as permission to access the headset now.
+**Device access restored:** The user explicitly returned the Quest for testing.
+The combat-lighting APK (source `b8852ac`, including numeric trace storage) is
+installed and its device SHA-256 matches the build. All 173 backed-up profile
+files are byte-identical before/after; all 16 native/DEX files match the prior
+APK. However the Quest remains in its system/Guardian dialog state: no game
+process or CDP target starts. The user cannot currently resolve that headset
+dialog. No visible-XR test, new FPS result or GPU-cost measurement was possible.
+Resume normal startup/testing when the user clears it; do not bypass the
+play-area dialog. Automation remains paused. See the deployment addendum in
+[combat lighting](quest-combat-lighting.md).
 
 **Current direction: visual refinement, not further FPS tuning.**
 [Optional combat lighting](quest-combat-lighting.md) now adds original-colour
@@ -16,8 +21,8 @@ lights maximum, no additional shadow/render passes; original gameplay and
 readback displays remain intact. The hand-built cockpit/glove materials are
 not part of this first version. Local WebGL tests verify original pixels when
 OFF and consistent batched/two-eye rendering when ON; a frozen full mission
-shows the effect. 140 focused tests and frontend build pass. No Quest access,
-APK installation or headset performance verification in this step.
+shows the effect. 140 focused tests and frontend build pass. The subsequent
+installation is recorded above; headset performance verification is pending.
 
 **Previous offline change:** [preallocated raw trace storage](quest-trace-storage.md).
 The opt-in recorder now stores numeric events in a fixed 7 MiB maximum buffer

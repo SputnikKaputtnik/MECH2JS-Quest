@@ -91,3 +91,28 @@ accepted resolution. No new Quest FPS or GPU-budget claim follows from these
 offline checks. The installed APK remains source `6e5f9e6`; this feature and
 the preceding trace-storage change are source/build only for now. Do not
 access the Quest until a new exclusive test window is agreed.
+
+## Subsequent installation after the user returned the Quest
+
+The user explicitly restored device access and requested testing. Source
+`b8852ac` is now packaged and installed with `adb install -r`. Device APK
+SHA-256 matches `887e6f85c156ca0269b4f3e367bec1c52d27d884228b856c13201cdc332ccb39`;
+app inventory ID is `de3ff15858bc97aaa49763689c6a1c09519103b15fe0d7481fb4619b36fdaac6`.
+All 16 native-library/DEX hashes match the previous installed build. A private
+profile backup covers `app_content_shell`, `shared_prefs` and `databases`:
+all 173 files are byte-identical after installation. The previous APK is kept
+privately as `work/android-runtime/MECH2-Quest-before-combat-20261003.apk`.
+
+The Quest is authorized over USB, awake and configured for 72 Hz. However,
+startup remains in system/Guardian activities, with no game process or CDP
+target available, both before and after the update. The user was asked to
+resolve the headset play-area dialog and cannot currently do so. It was not
+bypassed. Installation is verified; application startup, visible XR and
+ON/OFF performance comparison remain **unverified**. No detailed GPU profiling
+was started. The default-OFF lighting preference was not changed.
+
+Private installation evidence: `outputs/quest-combat-deployment-20261003.json`,
+`outputs/quest-combat-installed-state-20261003.json` and
+`work/android-runtime/combat-apk-audit-20261003.json`. Profile archives remain
+private outside Git. This addendum supersedes the earlier reservation and
+not-installed statements above; the earlier local image evidence still applies.
