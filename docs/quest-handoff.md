@@ -4,10 +4,13 @@
 
 **Latest verified change:** [identical replacement geometry reuse](quest-geometry-reuse.md)
 removes repeated GPU-mesh construction when the target widget recreates the same
-mech parts. In one full-game 72 Hz pair, callback-plus-deferred host time fell
-from 6.38 to 5.84 ms; the target images matched exactly and 800 replacements
-kept geometry counts flat. The actual APK/release is unchanged. Repeat the
-timing comparison in reverse order before generalizing that 8.6% saving.
+mech parts. In a full-game 72 Hz pair, callback-plus-deferred host time fell
+from 6.38 to 5.84 ms. A reversed-order pair confirmed 6.47 to 5.84 ms: an
+8.6–9.8% reduction in this fixture, not a guarantee for every mission. The
+target images matched exactly and 800 replacements kept geometry counts flat.
+The actual APK/release is unchanged. A next useful measurement is the same
+complete workload at 90 Hz with reuse on/off; neither stable 90 Hz nor new GPU
+budget has been demonstrated, and occasional long intervals remain at 72 Hz.
 Do not rerun the already completed runtime comparison just because its older
 protocol appears below; continue with the geometry evidence and open checks.
 

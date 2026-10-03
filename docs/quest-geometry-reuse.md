@@ -78,10 +78,55 @@ wall time inside the instrumented host work, including synchronous API calls.
 
 The sampled head pose stayed within 0.81 mm / 0.023 degrees for reference and
 2.45 mm / 0.063 degrees for reuse. Settings and eye buffers stayed constant.
-Combat is not a deterministic replay, and the single-order timing pair has
-not been thermally equilibrated or repeated in reverse order. The small
+Combat is not a deterministic replay, and the first timing pair was not
+thermally equilibrated. The small
 triangle-count variation and these limits should accompany any performance
 claim. The raw traces are `quest-geometry-reuse-{off,on}-72-20261003.jsonl`.
+
+### Reversed-order verification
+
+A further pair ran reuse first, then reference, with the same 180-second
+capture and 30-second warm-up exclusion. Both completed without a lost trace,
+visibility failure or stalled callbacks. Besides the common entry switch,
+the private fixture snapshot recorded actual flags in the main renderer and
+both inset renderers: all samples matched their intended variant. These
+snapshots were sampled by the recorder, not by build-count wrappers.
+
+| Reversed pair, after warm-up | Reference (second) | Reuse (first) |
+| --- | ---: | ---: |
+| Visible callbacks | 10,738 | 10,757 |
+| XR callbacks/s | 71.59 | 71.71 |
+| Callback CPU mean | 4.69 ms | 4.47 ms |
+| Callback plus associated deferred work, mean | 6.47 ms | 5.84 ms |
+| Callback plus associated deferred work, p99 | 11.70 ms | 10.00 ms |
+| Simulation pass including inset views, mean | 5.94 ms | 4.44 ms |
+| Actual callback-entry interval p99 | 17.80 ms | 16.70 ms |
+| Longest actual callback-entry interval | 32.50 ms | 40.60 ms |
+| Callback-entry intervals >20.833 ms | 87 | 71 |
+| Mean callback draw calls | 55.73 | 56.00 |
+| Mean callback triangles | 38,769 | 38,827 |
+| Peak sampled live GPU geometries | 52 | 52 |
+
+The host-work saving is 0.63 ms (9.8%) in the reversed pair, versus 0.55 ms
+(8.6%) in the first pair. This supports a repeatable reduction for this
+full-game fixture rather than a favorable run order. It does not establish
+the same gain in every mission, new GPU budget, stable 90 Hz, or perfectly
+stable 72 Hz: the reuse run still had a 40.6 ms callback-entry interval.
+
+Both retained actual 1680 x 1760 eye buffers, a 13.888888 ms display period,
+two inset targets, audio, invulnerability, FFR 1 and DRS off. Maximum sampled
+pose offset was 2.71 mm / 0.050 degrees for reuse and 5.09 mm / 0.073 degrees
+for reference. Thermal status was 0 throughout the before/middle/after reads;
+the current HAL SoC readings were 56.90, 56.62 and 56.37 degrees C. These were
+not controlled temperature or CPU-frequency conditions. The scene is still
+not a deterministic combat replay. Earlier cached thermal entries in dumpsys
+are not the current HAL temperatures.
+
+Private evidence: `quest-geometry-reuse-reverse-{on,off}-72-20261003.jsonl`,
+their summaries and `quest-geometry-reverse-*-thermal-*.txt` snapshots. The
+first pair's sampled live GPU geometry maximum was 51 for both variants.
+After testing, the bundled app origin was restored at 72 Hz; the development
+variant override was discarded with the test process. No new APK was installed.
 
 ## Evidence and limits
 
