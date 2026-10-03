@@ -98,3 +98,86 @@ Private evidence outside Git:
 
 The normal bundled app was restored at 72 Hz after capture. Chromium tracing
 ended, no `ovrgpuprofiler` process remained, and no APK was installed.
+
+## System scheduler follow-up
+
+Following the user's instruction to continue, a combined Android Perfetto
+capture added `sched_switch`, `sched_waking`, CPU frequency/idle events and
+Chromium track events to one clock domain. No APK change was needed. Analysis
+uses the scheduler's `thread_state` intervals, following the
+[Perfetto scheduling-table documentation](https://perfetto.dev/docs/analysis/perfetto-sql-getting-started).
+This distinguishes actually running, runnable but waiting for a CPU, and
+interruptible sleep; it still does not identify what an interruptible sleeper
+is waiting for.
+
+The first 40-second system trace overwrote 38.1 MB in its 64 MiB ring buffer
+and lost incremental metadata. It is retained privately as a failed diagnostic,
+not used for per-frame claims. The corrected capture used a 128 MiB buffer,
+streaming writes every second and renewed incremental state every five seconds.
+It retained the Chromium events and reported no data loss. Trace Processor
+v58.2 does report `config_write_into_file_no_flush`: lack of a periodic flush
+setting increases the memory required to load this trace, not lost events.
+Future configs should add `flush_period_ms`; this does not justify another run
+of an otherwise complete diagnostic.
+
+The corrected run used the same AMY_SCN1 fixture, active 11.111111 ms display
+period, 1680 x 1760 eye buffers, geometry reuse on, both insets, audio, FFR 1,
+DRS off and automatic combat. Its 30-second raw game window contains 2,582
+visible frames with no overflow. Before/after snapshots verify the settings;
+there are no continuous pose samples. This is a tracing diagnostic with
+overhead, not a replacement for the earlier performance comparison.
+
+The `mw2-system-start` mark aligns raw frame entries to Perfetto timestamps.
+The independent end mark differs by 0.042 ms from that mapping. Analysis uses
+the first through last game-frame entry, excluding final evaluation/readback.
+For each gap longer than 16.667 ms, intersect scheduler states with the entire
+interval from the preceding game callback entry to the delayed one. All 114
+such gaps have complete state coverage (sum agrees with interval length to
+the CSV output precision).
+
+| Renderer-main state during each long interval | Mean |
+| --- | ---: |
+| Running on a CPU | 7.27 ms |
+| Runnable, waiting for CPU (`R` plus `R+`) | 0.45 ms |
+| Interruptible sleep (`S`) | 13.12 ms |
+
+Only four of the 114 gaps accumulated over 1 ms runnable time; 112 accumulated
+over 8 ms interruptible sleep. Thus scheduler starvation of the JavaScript
+renderer is not the dominant explanation in this capture. Across the full
+29.993-second analyzed window, that thread ran for 17.018 seconds, waited
+runnable for 0.905 seconds and slept for 12.070 seconds. This is one thread's
+scheduling, not whole-SoC utilization or GPU headroom.
+
+All 114 delayed entries also match a completed `RequestImmersiveFrame` async
+span within 3 ms. Its lifetime averaged 20.55 ms for these entries versus
+10.94 ms for 2,466 matched ordinary entries. From the span's end to our game
+callback averaged 0.63 ms versus 0.61 ms. These request lifetimes include
+asynchronous waiting and normal frame pacing; they are not CPU execution time.
+The result narrows the issue to the pending-frame path but does not prove
+whether earlier application work missed a submission deadline, the GPU/fence
+path held up the next frame, or the runtime paced delivery differently.
+
+The native `GPU completion` thread also exposes 3,433 `waitForever` spans
+across the full system trace, averaging 4.15 ms with maximum 6.34 ms. They are
+CPU-side fence waits. Do not relabel them GPU render times, GPU utilization or
+compositor FPS, and do not assume they caused the 114 callback gaps. Explicit
+frame/fence/deadline correlation is still missing. The native `VRB Render`
+thread is distinct from Chromium's `WvrThread`; do not treat their names as
+interchangeable in further analysis.
+
+Private evidence and reproducibility:
+
+- `quest-system-timeline-clean-20261003.pftrace` (122.5 MB) and corresponding
+  `.json`, `-scheduler.sql`, `-scheduler.csv`, `-scheduler-analysis.json`, and
+  `-thread-totals.csv`.
+- `quest-system-request-spans-20261003.csv` and
+  `quest-system-request-analysis-20261003.json`.
+- `work/quest-scheduler.pbtxt`, `work/record-system-timeline.mjs`,
+  `work/analyze-system-scheduler.mjs`, and `work/analyze-request-spans.mjs`.
+- `quest-system-timeline-20261003.pftrace` is the rejected ring-buffer run.
+
+The official Windows Trace Processor binary is kept privately in `work`;
+its SHA-256 was verified against the official v58.2 wrapper manifest before
+execution. No traces were uploaded. The bundled app was restored at 72 Hz;
+`perfetto --query` confirmed zero active tracing sessions. The absence-window
+automation remains paused; this follow-up was explicitly requested in chat.

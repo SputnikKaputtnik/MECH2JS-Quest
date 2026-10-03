@@ -16,9 +16,14 @@ That single-order pair does not establish a pacing improvement. Neither stable
 is runtime delivery/fence/compositor correlation. A first
 [Chromium timeline diagnostic](quest-frame-delivery-diagnostic.md) is complete:
 77 matched late intervals were already late at the main-thread WebXR receipt
-handler; most gaps were not filled by recorded main-thread tasks. One major GC
-contributed to the worst outlier, but GC did not explain most gaps. GPU duration,
-upstream delivery versus queued receipt, and compositor deadlines remain open.
+handler. A subsequent system-scheduler capture covers 114 long intervals:
+renderer-main averages 7.27 ms running, 0.45 ms runnable and 13.12 ms sleeping
+within those intervals. CPU scheduling starvation is not their dominant cause.
+Pending `RequestImmersiveFrame` spans average 20.55 ms for those delayed
+entries versus 10.94 ms for ordinary entries. Native GPU-completion waits are
+visible, but they are not pure GPU durations or proven causes of the gaps.
+Frame/fence/deadline correlation remains open. The first 64 MiB system trace
+lost metadata and was rejected; use the subsequent `*-clean-*` capture only.
 Do not repeat that diagnostic as an FPS baseline; tracing adds overhead.
 Do not rerun the already completed runtime comparison just because its older
 protocol appears below; continue with the geometry evidence and open checks.
