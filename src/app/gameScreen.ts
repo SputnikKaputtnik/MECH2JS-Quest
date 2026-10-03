@@ -42,6 +42,8 @@ import { commandExecute } from '../sim/ui/commands.ts';
 import { configureQuestSession } from './questSession.ts';
 import { applyQuestFoveation, prepareQuestGraphics, updateQuestResolution } from './questGraphics.ts';
 import { QuestPerf } from './questPerf.ts';
+import { AfterRenderTask } from './afterRenderTask.ts';
+import { questFrameExperiment } from './questFrameExperiment.ts';
 import { QuestComfortMenu, fpsCounterEnabled } from './questComfort.ts';
 import { FpsOverlay } from '../render/xr/fpsOverlay.ts';
 import type { XrHost } from './xrHost.ts';
@@ -178,6 +180,16 @@ export class GameScreen {
   private paletteDirty = false;
   private last = performance.now();
   private readonly questPerf = new QuestPerf();
+  private readonly afterRender = questFrameExperiment.schedule === 'after-render' ? new AfterRenderTask() : null;
+  private disposed = false;
+  private frameNumber = 0;
+  private passRevision = 0;
+  private passPending = false;
+  private passTime = 0;
+  private frameConsumedPass = false;
+  private deferThisFrame = false;
+  private deferredElapsed = 0;
+  private deferredXrTime = 0;
   private readonly fpsOverlay = new FpsOverlay();
   private readonly aimMemo = new AimDepthMemo();
   private aimRevision = 0;
@@ -268,7 +280,10 @@ export class GameScreen {
     renderPort.current = this.views;
     // the renderer's loop: the window's animation frames, or the headset's while a session is on
     const loop = (now: number) => {
+      if (this.disposed) return;
       const start = performance.now();
+      const previousXrTime = this.last;
+      this.frameNumber++;
       if (!opts.host) updateQuestResolution(webgl, now, true);
       webgl.info.autoReset = false;
       webgl.info.reset();
@@ -276,12 +291,24 @@ export class GameScreen {
       // the headset's framebuffer for this frame: three binds it before calling back
       const xrTarget = webgl.xr.isPresenting ? webgl.getRenderTarget() : null;
       this.frame(now);
+      if (this.disposed) return;
       if (xrTarget) {
         if (this.settings().spectator.mode === 'mirror') this.mirrorEye(xrTarget);
         else if (this.mirror.on) this.spectate(xrTarget);
       }
       this.timeXrFrame(start);
       this.questPerf.record(now, performance.now() - start, webgl);
+      if (this.questPerf.trace.enabled) this.questPerf.trace.record({ kind: 'frame', frame: this.frameNumber,
+        start, end: performance.now(), xrTime: now, interval: now - previousXrTime,
+        consumedPass: this.frameConsumedPass, revision: this.passRevision, inlineSimMs: this.questPerf.simMs,
+        calls: webgl.info.render.calls, triangles: webgl.info.render.triangles,
+        schedule: questFrameExperiment.schedule, visible: webgl.xr.getSession()?.visibilityState === 'visible' });
+      if (this.deferThisFrame) this.afterRender?.post(() => {
+        const elapsed = this.deferredElapsed;
+        this.deferredElapsed = 0;
+        if (this.disposed || game.mode !== 'play' || webgl.xr.getSession()?.visibilityState !== 'visible') return;
+        this.runSimulation(elapsed, this.deferredXrTime, 'after-render');
+      });
     };
     if (opts.host) opts.host.present(loop);
     else webgl.setAnimationLoop(loop);
@@ -377,6 +404,31 @@ export class GameScreen {
     );
   }
 
+  /** Keep timer/audio, main-view requests and inset rendering in the same task. */
+  private runSimulation(elapsedMs: number, xrTime: number, phase: 'inline' | 'after-render'): void {
+    const start = performance.now(), stats = this.webgl.info.render;
+    const calls = stats.calls, triangles = stats.triangles;
+    let passed = false;
+    try {
+      if (!this.game.playFrame(elapsedMs, () => {
+        this.views.beginFrame();
+        passed = true;
+      })) this.game.setMode('edit');
+      if (passed) {
+        this.passRevision++;
+        this.passPending = true;
+        // Same XR time domain as the inline camera interpolation; consumed next render.
+        this.passTime = xrTime;
+      }
+    } finally {
+      const end = performance.now();
+      if (phase === 'inline') this.questPerf.simMs = end - start;
+      if (this.questPerf.trace.enabled) this.questPerf.trace.record({ kind: 'simulation', frame: this.frameNumber,
+        start, end, phase, passed, revision: this.passRevision, elapsedMs,
+        calls: stats.calls - calls, triangles: stats.triangles - triangles });
+    }
+  }
+
   private readonly frame = (now: number): void => {
     const { game, sr, webgl: renderer, el, drawSize, rig, hudOverlay, cockpit, views } = this;
     const gameCam = this.gameCamera;
@@ -406,17 +458,21 @@ export class GameScreen {
       for (const v of new Set([cameraGlobals.mainViewer, cameraGlobals.viewerPosition])) if (v) viewerRefreshLodScale(v);
     }
     const playing = game.mode === 'play';
-    let passed = false;
+    this.deferThisFrame = !!this.afterRender && this.passRevision > 0 && playing && game.netBoot === null
+      && session?.visibilityState === 'visible';
+    if (!this.deferThisFrame) { this.afterRender?.cancel(); this.deferredElapsed = 0; }
     if (playing) {
       // the game's render requests are per pass of its loop: between passes the last one is drawn again
-      const onPass = () => {
-        views.beginFrame();
-        passed = true;
-      };
-      const simStart = performance.now();
-      if (!game.playFrame(elapsedMs, onPass)) game.setMode('edit');
-      this.questPerf.simMs = performance.now() - simStart;
+      if (this.deferThisFrame) {
+        // At most one queued job. Coalesce elapsed time if XR overtakes task dispatch.
+        this.deferredElapsed = Math.min(100, this.deferredElapsed + Math.max(0, elapsedMs));
+        this.deferredXrTime = now;
+      } else this.runSimulation(elapsedMs, now, 'inline');
     }
+    if (this.disposed) return;
+    const passed = this.passPending;
+    this.passPending = false;
+    this.frameConsumedPass = passed;
     // after the frame: the loop may have ended and left Edit. A headset always looks through the game's camera
     const outside = this.opts.lookThrough?.(dt, xr) ?? null;
     if (passed || !playing || game.netBoot !== null) this.aimRevision++;
@@ -474,7 +530,7 @@ export class GameScreen {
     // the rig follows the viewer pass by pass (interpolated between them), or stands with it while paused
     if (!scene) {
       if (!playing) rig.hold(gameCam, now);
-      else if (passed) rig.recordPass(gameCam, now);
+      else if (passed) rig.recordPass(gameCam, this.passTime);
     }
     game.updateTextures(sr);
     const tanH = 0x10000 / Math.min(0x100000, Math.max(0x8000, viewer().zoom | 0));
@@ -832,6 +888,9 @@ export class GameScreen {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.afterRender?.dispose();
+    this.deferredElapsed = 0;
     this.questPerf.finish();
     const { webgl } = this;
     const host = this.opts.host;

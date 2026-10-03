@@ -1,11 +1,25 @@
-# Quest development handoff — 2026-10-02
+# Quest development handoff — updated 2026-10-03
 
 ## Start here
 
-Code baseline: **`78e71fa` on `vr-mode`**, fork
+Baseline before the current scheduling experiment: **`ba57ee4` on `vr-mode`**, fork
 [SputnikKaputtnik/MECH2JS-Quest](https://github.com/SputnikKaputtnik/MECH2JS-Quest).
 Upstream is [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS).
-This handoff adds documentation; it does not install a new APK or replace gameplay.
+The preserved release below remains unchanged. Current work is an opt-in
+full-game 72 Hz scheduling experiment; no new APK is required or installed.
+
+**Current priority:** the user accepts 72 Hz and wants usable graphics headroom.
+Pause worker integration, preserve its code and measurement tools, and compare
+inline simulation with a later main-thread task in the complete gameplay path.
+See [the experiment protocol](quest-frame-scheduling.md). This is not an enabled
+default optimization and does not allocate another CPU thread.
+
+The first complete instrument-enabled A/B pair at 72 Hz recorded 69.74 versus
+71.68 XR callbacks/s, and 860 versus 87 intervals longer than 20.83 ms, for
+inline versus deferred simulation. Total measured host CPU remained about
+6.1 ms per callback including deferred work. This supports improved pacing in
+the stationary test, not a proven graphics-budget increase. See the protocol's
+results and limits before interpreting the callback-only CPU reduction.
 
 **The worker experiment has not demonstrated a performance improvement over the
 complete playable build.** Its visible test omits audio, custom cockpits, physical
@@ -45,6 +59,7 @@ The release contains no original game data, saves or signing keys.
 | Full browser game | Quest Browser, normally `http://localhost:5173/` | Offline installation and separate browser save profile; fallback |
 | Full standalone game | APK `io.github.sputnikkaputtnik.mech2quest`, embedded Wolvic Chromium 1.4 / OpenXR, `http://127.0.0.1:19895/?native=1` | Local content; does not require PC/browser connection during ordinary play; simulation and presentation still share main JS thread |
 | Visible worker experiment | Existing embedded runtime navigated to `http://127.0.0.1:5175/test/browser/workerVr.html` | Development route requiring PC server and USB reverse; isolated AMY_SCN1 mission; not the APK's bundled frontend |
+| Full-game scheduling A/B | Same embedded runtime, `/test/browser/fullGameVr.html?questFrameTest=inline&questHz=72&questInvulnerable=1` (or `after-render`) | Complete GameScreen/AudioHost, scratch AMY_SCN1; opt-in trace and original invulnerability cheat; no campaign/profile saves |
 | Autonomous worker fixtures | `/test/browser/questHarness.html` via `tools/quest-test.mjs` | Offscreen correctness/CPU experiments; not XR display benchmarks |
 
 The worker is not enabled in normal gameplay. No APK installation is necessary
@@ -211,6 +226,12 @@ GPU surface traces are not total GPU/compositor frame timings.
   against a matching original-game scene; retain as a visual comparison item.
 
 ## Next work and acceptance criteria
+
+The worker-specific steps below are retained as future acceptance criteria,
+not the current implementation plan. First finish the full-game 72 Hz scheduling
+comparison, including off-callback CPU costs. Keep the worker frozen unless the
+complete-game evidence justifies returning to it. Then investigate submission
+and state-change costs before new graphics features.
 
 1. **Make missed frames diagnosable.** Record bounded per-frame timings for
    adoption, HUD update, world preparation, submission and interval gaps, plus

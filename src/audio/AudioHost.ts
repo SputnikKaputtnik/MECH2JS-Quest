@@ -30,6 +30,8 @@ export class AudioHost {
   private stopMidi: (() => void) | null = null;
   readonly cd: BinCdDrive | null;
   enabled = false;
+  /** @portOnly Read-only verification that an enabled output is actually running. */
+  get contextState(): AudioContextState | 'uninitialized' { return this.ctx?.state ?? 'uninitialized'; }
 
   constructor(cd: GameCd | null, install: InstallSource) {
     const sheet: CueSheet | null = cd?.kind === 'image' ? parseCue(cd.cue.text) : null;

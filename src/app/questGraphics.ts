@@ -1,7 +1,8 @@
 /** @portOnly Quest graphics preferences; framebuffer size is selected before entering XR. */
 import type { WebGLRenderer } from 'three';
 import { DynamicResolution } from './dynamicResolution.ts';
-export const QUEST_TARGET_HZ = 90;
+import { questFrameExperiment } from './questFrameExperiment.ts';
+export const QUEST_TARGET_HZ = questFrameExperiment.requestedHz;
 export const QUEST_RENDER_SCALES = [1, 1.25, 1.5, 1.75, 2] as const;
 let foveated = true;
 let dynamic = true;

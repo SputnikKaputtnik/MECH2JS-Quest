@@ -112,6 +112,11 @@ export class IndexedViews implements RenderPort {
     this.mainWipe = null;
   }
 
+  /** @portOnly Read-only evidence that instrument render targets were allocated. */
+  get insetTargets(): { width: number; height: number }[] {
+    return [...this.views.values()].map(v => ({ width: v.target.width, height: v.target.height }));
+  }
+
   mainView(wipeColour: number | null): void {
     this.mainRequested = true;
     this.mainWipe = wipeColour;

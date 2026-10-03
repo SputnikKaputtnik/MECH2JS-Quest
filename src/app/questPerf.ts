@@ -2,7 +2,10 @@
 import type { WebGLRenderer } from 'three';
 import { FrameRate } from './frameRate.ts';
 import { QUEST_TARGET_HZ, renderScale, dynamicResolutionStatus } from './questGraphics.ts';
+import { QuestFrameTrace } from './questFrameTrace.ts';
+import { questFrameExperiment } from './questFrameExperiment.ts';
 export class QuestPerf {
+  readonly trace = new QuestFrameTrace();
   private samples: { dt: number; cpu: number; sim: number; calls: number; triangles: number }[] = [];
   private last = 0;
   private hz: number | undefined;
@@ -21,6 +24,7 @@ export class QuestPerf {
   get displayFps(): number | null { return this.status === 'recording' ? this.displayRate.value : null; }
   get missionFps(): number | null { return this.displayRate.missionAverage; }
   constructor(private readonly clock: () => number = () => performance.now()) {
+    if (questFrameExperiment.trace) this.trace.start();
     (window as unknown as { mw2QuestPerf: QuestPerf }).mw2QuestPerf = this;
   }
   /** Preserve the completed mission's samples, but never present them as live. */
@@ -68,6 +72,7 @@ export class QuestPerf {
       supportedHz:this.supportedHz, eyeBuffers:this.eyeBuffers, foveation:this.foveation, requestedRenderScale:renderScale(), dynamicResolution:this.dynamicResolution,
       xrCallbackHz:interval.mean?1000/interval.mean:0,intervalMs:interval,cpuMs:stat('cpu'),simCpuMs:stat('sim'),
       lateIntervals:this.samples.filter(s=>s.dt>budget*1.5).length,drawCalls:stat('calls'),triangles:stat('triangles'),framebuffer:this.framebuffer,memory:this.memory,
-      gpuMs:null,note:'XR callback timing; CPU excludes asynchronous GPU work. No compositor measurement.' };
+      schedule:questFrameExperiment.schedule,
+      gpuMs:null,note:'XR callback timing; CPU excludes asynchronous GPU work and deferred simulation. Use raw trace simulation events for total host work. No compositor measurement.' };
   }
 }
