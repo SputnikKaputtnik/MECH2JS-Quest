@@ -8,7 +8,18 @@ no ADB/CDP, app launches, installs, device settings or device-server restarts.
 Automation remains paused. Do not interpret older device-state notes below
 as permission to access the headset now.
 
-**Latest offline change:** [preallocated raw trace storage](quest-trace-storage.md).
+**Current direction: visual refinement, not further FPS tuning.**
+[Optional combat lighting](quest-combat-lighting.md) now adds original-colour
+laser segment lights and short explosion flashes to world surfaces. VR Options
+has a persistent default-OFF `Weapon & explosion lights` toggle. Four local
+lights maximum, no additional shadow/render passes; original gameplay and
+readback displays remain intact. The hand-built cockpit/glove materials are
+not part of this first version. Local WebGL tests verify original pixels when
+OFF and consistent batched/two-eye rendering when ON; a frozen full mission
+shows the effect. 140 focused tests and frontend build pass. No Quest access,
+APK installation or headset performance verification in this step.
+
+**Previous offline change:** [preallocated raw trace storage](quest-trace-storage.md).
 The opt-in recorder now stores numeric events in a fixed 7 MiB maximum buffer
 allocated before capture, instead of retaining up to 65,536 event objects.
 Exact export/cursor/wrap tests and the frontend build pass. Host measurements

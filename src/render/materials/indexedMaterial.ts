@@ -1,5 +1,7 @@
 /**
- * The faithful material: every fragment ends as a palette index.
+ * The faithful material: every fragment resolves through a palette index.
+ * Opt-in combat lights can then brighten RGB on main-view surfaces; indexed
+ * readback, maps and sprites retain the original palette output.
  *
  * Per face the CPU supplies the draw word polygon_resolve_colour produced:
  *   flat modes      index = word & 0xff  (ramp * 16 + shade, or a raw index)
@@ -98,6 +100,7 @@
  */
 import * as THREE from 'three';
 import { dac6to8 } from '../../data/formats/image.ts';
+import { COMBAT_LIGHT_GLSL, makeCombatLightUniforms, type CombatLightUniforms } from '../enhance/combatLights.ts';
 
 export const vertexShader = /* glsl */ `
 #if defined(MW2_BATCHED) || defined(USE_INSTANCING)
@@ -218,6 +221,8 @@ uniform float uShadowTexel;
 uniform sampler2D uShadowTable; // 256 x 1 R8: each index's shadow index
 out vec4 outColor;
 
+${COMBAT_LIGHT_GLSL}
+
 vec3 pal(int i) { return texelFetch(uPalette, ivec2(i & 255, 0), 0).rgb; }
 vec4 outFor(int i) { return uIndexOut != 0 ? vec4(float(i & 255) / 255.0, 0.0, 0.0, 1.0) : vec4(pal(i), 1.0); }
 
@@ -315,6 +320,10 @@ void main() {
     if (inShadow(n, ivec2(gl_FragCoord.xy))) idx = int(texelFetch(uShadowTable, ivec2(idx & 255, 0), 0).r * 255.0 + 0.5);
   }
   outColor = outFor(idx);
+  if (uCombatLightCount > 0 && uIndexOut == 0 && uMapFill == 0 && mode != 0x3000) {
+    vec3 n = dot(faceN, cameraPosition - vWorld) < 0.0 ? -faceN : faceN;
+    outColor.rgb = combatLight(outColor.rgb, vWorld, n);
+  }
 }
 `;
 
@@ -345,7 +354,7 @@ void main() {
 /** The draw word for a polygon the clipper did not queue; the shader discards it. */
 export const NOT_DRAWN = -1;
 
-export interface IndexedUniforms {
+export interface IndexedUniforms extends CombatLightUniforms {
   uPalette: { value: THREE.DataTexture };
   uLuma: { value: THREE.DataTexture };
   uAtlas: { value: THREE.DataTexture };
@@ -380,6 +389,7 @@ function dataTex(data: ArrayBufferView, w: number, h: number, format: THREE.Pixe
 
 export function makeUniforms(): IndexedUniforms {
   return {
+    ...makeCombatLightUniforms(),
     uPalette: { value: dataTex(new Uint8Array(256 * 4), 256, 1, THREE.RGBAFormat, THREE.UnsignedByteType) },
     uLuma: { value: dataTex(new Uint8Array(256 * 16), 256, 16, THREE.RedFormat, THREE.UnsignedByteType) },
     uAtlas: { value: dataTex(new Uint8Array(4), 1, 1, THREE.RedFormat, THREE.UnsignedByteType) },
@@ -420,6 +430,7 @@ export function makeViewUniforms(shared: IndexedUniforms, indexOut: boolean, map
     uMapFill: { value: mapFill ? 1 : 0 },
     uIndexOut: { value: indexOut ? 1 : 0 },
     // the views the game reads back are the original's: no enhancements
+    uCombatLightCount: { value: 0 },
     uPanels: { value: 0 },
     uShadowOn: { value: 0 },
   };

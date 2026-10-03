@@ -42,6 +42,10 @@ import { commandExecute } from '../sim/ui/commands.ts';
 import { configureQuestSession } from './questSession.ts';
 import { applyQuestFoveation, prepareQuestGraphics, updateQuestResolution } from './questGraphics.ts';
 import { QuestPerf } from './questPerf.ts';
+import { combatLightingEnabled } from './combatLighting.ts';
+import { CombatLights } from '../render/enhance/combatLights.ts';
+import { simTables } from '../sim/effects/simTables.ts';
+import { effectTypes } from '../sim/effects/effects.ts';
 import { AfterRenderTask } from './afterRenderTask.ts';
 import { questFrameExperiment } from './questFrameExperiment.ts';
 import { QuestComfortMenu, fpsCounterEnabled } from './questComfort.ts';
@@ -156,6 +160,7 @@ export interface GameScreenOptions {
 export class GameScreen {
   readonly webgl: THREE.WebGLRenderer;
   readonly sr = new SceneRenderer();
+  private readonly combatLights = new CombatLights(this.sr.uniforms);
   /** the game's view: set from the game's viewer every frame it is shown */
   readonly gameCamera = new THREE.PerspectiveCamera(60, 4 / 3, 0.5, 20000);
   /**
@@ -576,6 +581,9 @@ export class GameScreen {
     this.xrSky.setDetail(en.sky && wipe === null ? this.skyChoice : null);
     // the ground surface under the eye, and the scrounge field round the game's patch
     const eyeAt = head ? new THREE.Vector3().setFromMatrixPosition(head.matrixWorld) : camera.position;
+    const combatLightOn = combatLightingEnabled() && (xr || !s.faithful) && wipe === null;
+    this.combatLights.update(combatLightOn, simTables.projectiles, simTables.simSlots,
+      combatLightOn ? effectTypes() : [], eyeAt, sr.uniforms.uPalette.value.image.data as Uint8Array);
     this.groundField.updateGrid(eyeAt, this.groundShadesNow, en.ground && wipe === null && lighting.groundEnabled !== 0);
     this.groundField.updateField(sr, en.ground);
     // the shadow map along the mission's light (the one sync just latched), round the eye

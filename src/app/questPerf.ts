@@ -4,6 +4,7 @@ import { FrameRate } from './frameRate.ts';
 import { QUEST_TARGET_HZ, renderScale, dynamicResolutionStatus } from './questGraphics.ts';
 import { QuestFrameTrace } from './questFrameTrace.ts';
 import { questFrameExperiment } from './questFrameExperiment.ts';
+import { combatLightingEnabled } from './combatLighting.ts';
 export class QuestPerf {
   readonly trace = new QuestFrameTrace();
   private samples: { dt: number; cpu: number; sim: number; calls: number; triangles: number }[] = [];
@@ -73,6 +74,7 @@ export class QuestPerf {
       xrCallbackHz:interval.mean?1000/interval.mean:0,intervalMs:interval,cpuMs:stat('cpu'),simCpuMs:stat('sim'),
       lateIntervals:this.samples.filter(s=>s.dt>budget*1.5).length,drawCalls:stat('calls'),triangles:stat('triangles'),framebuffer:this.framebuffer,memory:this.memory,
       schedule:questFrameExperiment.schedule,
+      combatLighting:combatLightingEnabled(),
       gpuMs:null,note:'XR callback timing; CPU excludes asynchronous GPU work and deferred simulation. Use raw trace simulation events for total host work. No compositor measurement.' };
   }
 }

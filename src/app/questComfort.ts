@@ -9,6 +9,7 @@ import { mechRuntime } from '../sim/mech/mechRuntime.ts';
 import { mechs } from '../sim/mech/mechGlobals.ts';
 import { mainLoop } from '../mission/mainLoop.ts';
 import { cameraGlobals } from '../sim/camera/viewer.ts';
+import { combatLightingEnabled, setCombatLighting } from './combatLighting.ts';
 import { dynamicResolutionEnabled, dynamicResolutionRuntimeAvailable, setDynamicResolution, fixedFoveationEnabled, setFixedFoveation, renderScale, setRenderScale, QUEST_RENDER_SCALES } from './questGraphics.ts';
 
 const KEY = 'mw2.quest.ejection-animation';
@@ -157,7 +158,17 @@ export class QuestComfortMenu {
     const restart = new MenuItem();
     restart.type = 3;
     restart.label = 'Resolution: restart VR to apply';
-    options.items = [toggle, warning, fps, ffr, resolution, restart, dynamic, back];
+    const combat = new MenuItem();
+    combat.type = 4;
+    combat.label = 'Weapon & explosion lights';
+    const combatControl = new MenuControl();
+    combatControl.flags = 1;
+    combatControl.get = () => Number(combatLightingEnabled());
+    combatControl.commit = (_selector: number, value: number) => setCombatLighting(value !== 0);
+    combatControl.data = { kind: 'list', suffix: null, count: 2, strings: ['OFF', 'ON'] };
+    combat.control = combatControl;
+    combat.draw = toggle.draw;
+    options.items = [toggle, warning, fps, ffr, resolution, restart, dynamic, combat, back];
     options.count = options.items.length;
     const entry = new MenuItem();
     entry.type = 0;
