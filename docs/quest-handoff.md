@@ -5,12 +5,18 @@
 Baseline before the current scheduling experiment: **`ba57ee4` on `vr-mode`**, fork
 [SputnikKaputtnik/MECH2JS-Quest](https://github.com/SputnikKaputtnik/MECH2JS-Quest).
 Upstream is [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS).
-The preserved release below remains unchanged. Current work is an opt-in
-full-game 72 Hz scheduling experiment; no new APK is required or installed.
+The preserved release below remains unchanged. The opt-in full-game 72 Hz
+scheduling experiment is committed as `c63a5e8`; follow-up work compares the
+complete game across runtimes at 90 Hz. No new APK is required or installed.
 
 **Current priority:** the user accepts 72 Hz and wants usable graphics headroom.
-Pause worker integration, preserve its code and measurement tools, and compare
-inline simulation with a later main-thread task in the complete gameplay path.
+Pause worker integration and preserve its code and measurement tools. The
+user's movement test of deferred simulation was reported as okay; individual
+glove/menu/death acceptance remains open. Compare the same full-game fixture
+and actual eye buffers across Quest Browser and the embedded runtime before
+attributing historical differences to Wolvic or choosing a C++/OpenXR rewrite.
+See [the runtime comparison](quest-runtime-comparison.md) for the 90 Hz protocol,
+pose-contaminated capture, stationary repeat, results and limitations.
 See [the experiment protocol](quest-frame-scheduling.md). This is not an enabled
 default optimization and does not allocate another CPU thread.
 

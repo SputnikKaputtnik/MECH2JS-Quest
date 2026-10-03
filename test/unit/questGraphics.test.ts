@@ -3,6 +3,19 @@ import type { WebGLRenderer } from 'three';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('applies temporary runtime comparison settings without overwriting preferences', async () => {
+  const stored = new Map([['mw2.quest.render-scale', '1.5'], ['mw2.quest.ffr', 'false'], ['mw2.quest.dynamic-resolution', 'true']]);
+  const setItem = vi.fn((key: string, value: string) => stored.set(key, value));
+  vi.stubGlobal('localStorage', { getItem: (key: string) => stored.get(key) ?? null, setItem });
+  vi.resetModules();
+  let g = await import('../../src/app/questGraphics.ts');
+  g.setRenderScale(1, false); g.setFixedFoveation(true, false); g.setDynamicResolution(false, false);
+  expect(g.renderScale()).toBe(1); expect(g.fixedFoveationEnabled()).toBe(true); expect(g.dynamicResolutionEnabled()).toBe(false);
+  expect(setItem).not.toHaveBeenCalled();
+  vi.resetModules(); g = await import('../../src/app/questGraphics.ts');
+  expect(g.renderScale()).toBe(1.5); expect(g.fixedFoveationEnabled()).toBe(false); expect(g.dynamicResolutionEnabled()).toBe(true);
+});
+
 it('keeps full eye rectangles on Wolvic Chromium 1.4 despite its exposed viewport API', async () => {
   vi.stubGlobal('navigator', { userAgent: 'Chrome/150.0.0.0 Mobile VR Wolvic/1.4' });
   vi.resetModules();

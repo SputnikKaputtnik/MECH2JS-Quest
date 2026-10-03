@@ -172,7 +172,14 @@ It occurred outside the measured instrument comparison and is an unresolved
 reload/lifecycle issue, not a confirmed gameplay crash or a scheduling win.
 The instrument comparison uses a fresh app process for each mode.
 
-Human stereo/head-motion, glove contact, menus, pause/resume and death/abort
-acceptance are still required before promoting the deferred mode. Invulnerable,
-stationary headset tests intentionally do not cover those interactions. Keep
-the ordinary inline path and the preserved release available.
+The user subsequently tested the complete game with physical head movement
+and reported it was okay. In that separate manual trace, 95.55 seconds after
+30 seconds of warm-up contained 6,803 callbacks: 71.20 callbacks/s, interval
+p99 23.72 ms, maximum 56.60 ms. Mean callback CPU was 5.41 ms plus 1.14 ms of
+associated deferred work. This was not a paired baseline test. Glove contact,
+all menu transitions and death/abort lifecycle are not individually confirmed
+by that general feedback. Keep the ordinary inline path and preserved release.
+
+The follow-up [runtime comparison](quest-runtime-comparison.md) fixes graphics
+preferences and actual eye buffers across Quest Browser and the embedded app,
+and uses 90 Hz at the user's request to avoid hiding capacity behind a 72 Hz cap.

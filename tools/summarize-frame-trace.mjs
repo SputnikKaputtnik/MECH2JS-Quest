@@ -9,6 +9,7 @@ const events = samples.flatMap(r => r.raw.events);
 const frames = events.filter(e => e.kind === 'frame' && e.visible);
 const cutoff = (frames[0]?.start ?? 0) + warmupMs;
 const selected = frames.filter(f => f.start >= cutoff);
+const dispatchIntervals = frames.flatMap((f,i)=>i && f.start>=cutoff ? [f.start-frames[i-1].start] : []);
 const warmSamples = samples.filter(s=>s.raw.events.some(e=>e.start>=cutoff));
 const sims = events.filter(e => e.kind === 'simulation');
 const after = new Map();
@@ -18,14 +19,30 @@ const metadata = rows.find(r => r.kind === 'metadata');
 const budget = metadata.displayPeriodNs / 1e6;
 const gpuText = rows.filter(r=>r.kind==='device-gpu-counters').map(r=>r.text).join('');
 const gpuValues = label => [...gpuText.matchAll(new RegExp(label + '\\s*:\\s*([0-9.]+)', 'g'))].map(m=>Number(m[1]));
+const poses = warmSamples.map(s=>s.state.headPose).filter(Boolean);
 console.log(JSON.stringify({ complete:rows.some(r=>r.kind==='complete' && !r.interrupted), failure:rows.find(r=>r.kind==='failure'),
   mission:metadata.before.mission, schedule:metadata.before.schedule, actualEyes:metadata.before.perf.eyeBuffers,
   requestedHz:metadata.before.perf.requestedHz, observedDisplayPeriodMs:budget, warmupMs,
+  runtime:{userAgent:metadata.before.userAgent,layerKind:metadata.before.layerKind,contextAttributes:metadata.before.contextAttributes,
+    settings:metadata.before.settings,loopRate:metadata.before.loopRate,ffr:metadata.before.perf.foveation,
+    drsEnabled:metadata.before.perf.dynamicResolution?.enabled,requestedRenderScale:metadata.before.perf.requestedRenderScale,
+    fpsCounter:metadata.before.fpsCounter},
+  stableRenderConditions:warmSamples.every(s=>s.state.perf.foveation===metadata.before.perf.foveation
+    && s.state.perf.dynamicResolution?.enabled===metadata.before.perf.dynamicResolution?.enabled
+    && s.state.perf.dynamicResolution?.requestedViewportScale===1
+    && JSON.stringify(s.state.settings)===JSON.stringify(metadata.before.settings)),
+  headPoseSamples:poses.length,
+  maxHeadPositionFromCenterM:poses.length?Math.max(...poses.map(p=>Math.hypot(...p.position))):null,
+  maxHeadRotationFromCenterDegrees:poses.length?Math.max(...poses.map(p=>2*Math.acos(Math.min(1,Math.abs(p.orientation[3])))*180/Math.PI)):null,
   frames:selected.length, intervalMs:stats(selected.map(f=>f.interval)),
+  callbackStartIntervalMs:stats(dispatchIntervals),
+  lateCallbackStarts:dispatchIntervals.filter(dt=>dt>budget*1.5).length,
   xrCallbacksPerSecond:1000/(selected.reduce((sum,f)=>sum+f.interval,0)/(selected.length||1)),
   consumedPassFrames:{ intervalMs:stats(selected.filter(f=>f.consumedPass).map(f=>f.interval)), cpuMs:stats(selected.filter(f=>f.consumedPass).map(f=>f.end-f.start)) },
   reusedSceneFrames:{ intervalMs:stats(selected.filter(f=>!f.consumedPass).map(f=>f.interval)), cpuMs:stats(selected.filter(f=>!f.consumedPass).map(f=>f.end-f.start)) },
   callbackCpuMs:stats(selected.map(f=>f.end-f.start)),
+  callbackDrawCalls:stats(selected.map(f=>f.calls)),
+  callbackTriangles:stats(selected.map(f=>f.triangles)),
   callbackPlusAssociatedDeferredCpuMs:stats(selected.map(f=>f.end-f.start+(after.get(f.frame)??0))),
   passCpuMs:stats(sims.filter(s=>s.passed && s.start>=cutoff).map(s=>s.end-s.start)),
   passDrawCalls:stats(sims.filter(s=>s.passed && s.start>=cutoff).map(s=>s.calls)),
@@ -44,4 +61,4 @@ console.log(JSON.stringify({ complete:rows.some(r=>r.kind==='complete' && !r.int
   gpuFrequencyHz:stats(gpuValues('GPU Frequency')),
   shaderBusyPercent:stats(gpuValues('% Shaders Busy')),
   gpuCounterChunks:rows.filter(r=>r.kind==='device-gpu-counters').length,
-  note:'Combined CPU groups deferred work by preceding callback; it is not GPU/frame latency. Warmup is relative to recorder start. No compositor FPS claim.' }, null, 2));
+  note:'intervalMs uses XR-provided timestamps; callbackStartIntervalMs uses performance.now at callback entry. Combined CPU groups deferred work by preceding callback, not GPU/frame latency. Warmup is relative to recorder start. No compositor FPS claim.' }, null, 2));

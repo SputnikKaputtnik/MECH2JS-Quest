@@ -23,8 +23,9 @@ try {
 } catch { /* defaults */ }
 export function fixedFoveationEnabled(): boolean { return foveated; }
 export function dynamicResolutionEnabled(): boolean { return dynamic; }
-export function setDynamicResolution(enabled: boolean): void {
+export function setDynamicResolution(enabled: boolean, persist = true): void {
   dynamic = enabled;
+  if (!persist) return;
   try { localStorage.setItem('mw2.quest.dynamic-resolution', String(enabled)); } catch { /* session only */ }
 }
 export function dynamicResolutionStatus(renderer: WebGLRenderer) {
@@ -51,13 +52,15 @@ export function updateQuestResolution(renderer: WebGLRenderer, now: number, miss
   if (state.supported) for (const view of views) view.requestViewportScale(value);
 }
 export function renderScale(): number { return scale; }
-export function setFixedFoveation(enabled: boolean): void {
+export function setFixedFoveation(enabled: boolean, persist = true): void {
   foveated = enabled;
+  if (!persist) return;
   try { localStorage.setItem('mw2.quest.ffr', String(enabled)); } catch { /* session only */ }
 }
-export function setRenderScale(value: number): void {
+export function setRenderScale(value: number, persist = true): void {
   if (!QUEST_RENDER_SCALES.some(scale => scale === value)) return;
   scale = value;
+  if (!persist) return;
   try { localStorage.setItem('mw2.quest.render-scale', String(value)); } catch { /* session only */ }
 }
 export function applyQuestFoveation(renderer: WebGLRenderer): void {

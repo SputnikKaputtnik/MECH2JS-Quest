@@ -2,7 +2,7 @@
 import { loadGameData } from '../../src/app/gameData.ts';
 import { FetchSource } from '../../src/app/fetchSource.ts';
 import { Game } from '../../src/app/Game.ts';
-import { GameScreen, recallScreenSettings } from '../../src/app/gameScreen.ts';
+import { GameScreen, recallScreenSettings, type ScreenSettings } from '../../src/app/gameScreen.ts';
 import { XrHost } from '../../src/app/xrHost.ts';
 import { questFrameExperiment } from '../../src/app/questFrameExperiment.ts';
 import { seedControlFiles } from '../../src/shell/controls/seed.ts';
@@ -21,22 +21,38 @@ import { cockpitChassis } from '../../src/render/cockpit/chassis.ts';
 import { DESIGNS } from '../../src/render/cockpit/designs/index.ts';
 import { hud } from '../../src/sim/cockpit/hud.ts';
 import type { QuestPerf } from '../../src/app/questPerf.ts';
+import { setDynamicResolution, setFixedFoveation, setRenderScale } from '../../src/app/questGraphics.ts';
+import { fpsCounterEnabled } from '../../src/app/questComfort.ts';
 
 const enter = document.querySelector<HTMLButtonElement>('#enter')!;
 const restart = document.querySelector<HTMLButtonElement>('#restart')!;
 const status = document.querySelector<HTMLDivElement>('#status')!;
 const el = document.querySelector<HTMLDivElement>('#game')!;
+const query = new URLSearchParams(location.search);
+const runtimeTest = query.get('questRuntimeTest') === '1';
+if (runtimeTest) {
+  setDynamicResolution(false, false); setFixedFoveation(true, false);
+  setRenderScale(Number(query.get('questScale')), false);
+}
 const data = await loadGameData(new FetchSource());
 setDosFiles(data.loose); simOptionsFileEnsure(); soundConfigFileEnsure(); seedControlFiles(data.shellExe);
 const game = new Game(data), host = new XrHost();
+if (runtimeTest) game.loopRate = 20;
 let screen: GameScreen | null = null;
 let automaticFire = false, fireHeld = false, activeMs = 0, last = 0, epoch = '';
 let throttleHeld = false, targetHeld = false;
-const settings = recallScreenSettings();
+const settings: ScreenSettings = runtimeTest ? {
+  faithful: false, view: { viewDistance: 3, detail: 3 },
+  enhance: { mechPanels: true, mechsAllTop: true, ground: true, sky: true, shadows: true, cockpit: true, ownChassis: true },
+  xr: { cockpitScale: 0.35, hudScale: 0.6, hudDistance: 1.2, dashDrop: 0 },
+  spectator: { mode: 'mirror', fov: 90, smooth: 0.35 },
+} : recallScreenSettings();
 const invulnerable = new URLSearchParams(location.search).get('questInvulnerable') === '1';
 const instruments = new URLSearchParams(location.search).get('questInstruments') === '1';
 let centerPending = new URLSearchParams(location.search).get('questCenter') === '1';
 let centered = false, instrumentsReady = false;
+let nextPoseAt = 0;
+let headPose: { position: number[]; orientation: number[] } | null = null;
 const perf = () => (window as unknown as { mw2QuestPerf: QuestPerf }).mw2QuestPerf;
 function fire(held: boolean) {
   if (held === fireHeld) return;
@@ -69,7 +85,7 @@ game.onMissionEnd = () => { fire(false); throttle(false); target(false); status.
 host.subscribe(s => { if (s.error) status.textContent = s.error; });
 host.onTick(now => {
   const visible = host.renderer.xr.getSession()?.visibilityState === 'visible';
-  if (visible && centerPending) {
+  if (visible && centerPending && activeMs >= 2000) {
     const xr = host.renderer.xr, reference = xr.getReferenceSpace(), frame = xr.getFrame();
     const pose = reference && frame?.getViewerPose(reference);
     if (reference && pose) {
@@ -82,6 +98,15 @@ host.onTick(now => {
     if (last) activeMs += Math.min(100, Math.max(0, now - last));
     last = now;
   } else last = 0;
+  if (visible && now >= nextPoseAt) {
+    nextPoseAt = now + 1000;
+    const xr = host.renderer.xr, reference = xr.getReferenceSpace(), frame = xr.getFrame();
+    const pose = reference && frame?.getViewerPose(reference);
+    if (pose) {
+      const { position: p, orientation: q } = pose.transform;
+      headPose = { position: [p.x, p.y, p.z], orientation: [q.x, q.y, q.z, q.w] };
+    }
+  }
   if (!visible) { fire(false); if (game.mode === 'play') game.setMode('edit'); }
   if (instruments && automaticFire && visible && game.mode === 'play'
     && mechs.mechTable[mechs.playerMechIndex]?.loadout?.status === 2) {
@@ -113,6 +138,9 @@ const api = {
     mission: game.mission, mode: game.mode, error: game.loadError, activeMs, automaticFire,
     invulnerable: !!mechs.simOptions.invulnerability, combatProtocol: invulnerable ? 'stationary-fire-2s-rest-3s' : 'accelerate-20s-fire-2s-rest-3s',
     centered, instruments, instrumentsReady, cockpitChassis: cockpitChassis(data.prj),
+    runtimeTest, headPose, userAgent: navigator.userAgent, loopRate: game.loopRate, fpsCounter: fpsCounterEnabled(),
+    layerKind: host.renderer.xr.getBaseLayer()?.constructor.name,
+    contextAttributes: host.renderer.getContext().getContextAttributes(),
     customCockpitAvailable: !!DESIGNS[cockpitChassis(data.prj)],
     insetTargets: renderPort.current instanceof IndexedViews ? renderPort.current.insetTargets : [],
     settings, audioEnabled: game.audio.enabled, audioState: game.audio.contextState,
