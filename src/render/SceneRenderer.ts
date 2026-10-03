@@ -76,6 +76,7 @@ import { makeIndexedMaterial, makeLineMaterial, makeUniforms, NOT_DRAWN, setLuma
 import { isShadowCaster, SHADOW_LAYER } from './enhance/shadows.ts';
 import type { OwnChassisDraw } from './enhance/ownChassis.ts';
 import { WorldBatch } from './WorldBatch.ts';
+import { sameModelGeometry } from './sameModelGeometry.ts';
 import { currentPolygonKernel, loadPolygonKernel } from './wasm/polygonKernel.ts';
 
 /** A polygon's outline slots: (vertex count + 1) segments, enough for a near-clipped shape. */
@@ -126,6 +127,8 @@ const SPRITE_UV = [
 
 export interface ObjEntry {
   obj: WorldObject;
+  /** Node registered at build time; the object's node can later change. */
+  replacementNode: SceneNode | null;
   group: THREE.Group;
   meshes: MeshEntry[];
   baked: boolean;
@@ -156,6 +159,9 @@ export class SceneRenderer {
   batchWorld = true;
   /** @portOnly A/B switch for avoiding unchanged object-world matrix updates. */
   reuseWorldMatrices = true;
+  /** @portOnly Reuse an identical replacement on the same live scene node. */
+  reuseReplacementGeometry = true;
+  private readonly replacementEntries = new WeakMap<SceneNode, ObjEntry>();
   private readonly nextObjectMatrix = new THREE.Matrix4();
   private readonly worldBatch = new WorldBatch();
   readonly scene = new THREE.Scene();
@@ -289,6 +295,8 @@ export class SceneRenderer {
   }
 
   private dispose(e: ObjEntry): void {
+    const node = e.replacementNode;
+    if (node && this.replacementEntries.get(node) === e) this.replacementEntries.delete(node);
     e.group.parent?.remove(e.group);
     for (const m of e.meshes) {
       m.mesh.geometry.dispose();
@@ -398,7 +406,10 @@ export class SceneRenderer {
       });
     }
     into.add(group);
-    return { obj, group, meshes, baked, seen: this.pass };
+    const replacementNode = (obj.type & 0xf00) === 0x100 && obj.node?.userData === obj ? obj.node : null;
+    const entry = { obj, group, meshes, baked, seen: this.pass, replacementNode };
+    if (replacementNode) this.replacementEntries.set(replacementNode, entry);
+    return entry;
   }
 
   /** The outline slots of a mesh, made the first time one of its polygons needs an outline. */
@@ -624,6 +635,26 @@ export class SceneRenderer {
       this.dispose(e);
       e = undefined;
     }
+    if (!e && this.reuseReplacementGeometry && (obj.type & 0xf00) === 0x100 && obj.node?.userData === obj) {
+      const previous = this.replacementEntries.get(obj.node);
+      // Only transfer the currently owned entry of a freed object. A live
+      // object, another pass, or a changed model must keep its own geometry.
+      if (previous && !previous.baked && previous.obj.meshList === null && previous.obj.node === obj.node
+        && previous.obj.type === obj.type && previous.obj.index === obj.index
+        && (previous.obj.flags & 1) === (obj.flags & 1)
+        && previous.group.parent === into && entries.get(previous.obj) === previous
+        && this.matchesReplacement(previous, obj.meshList)) {
+        entries.delete(previous.obj);
+        previous.obj = obj;
+        let block = obj.meshList;
+        for (const mesh of previous.meshes) {
+          mesh.block = block!; block = block!.next;
+          this.byMesh.set(mesh.mesh, obj);
+        }
+        entries.set(obj, previous);
+        e = previous;
+      }
+    }
     if (!e) {
       e = this.build(obj, into);
       entries.set(obj, e);
@@ -644,6 +675,14 @@ export class SceneRenderer {
       e.group.matrixWorldNeedsUpdate = true;
     }
     return e;
+  }
+
+  private matchesReplacement(entry: ObjEntry, block: MeshBlock | null): boolean {
+    for (const mesh of entry.meshes) {
+      if (!block || !sameModelGeometry(mesh.block, block)) return false;
+      block = block.next;
+    }
+    return block === null;
   }
 
   /** object_draw_lod_mesh: the LOD mesh at objectViewDepth, then every polygon through the clipper. */

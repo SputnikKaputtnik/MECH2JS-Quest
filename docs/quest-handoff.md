@@ -2,6 +2,15 @@
 
 ## Start here
 
+**Latest verified change:** [identical replacement geometry reuse](quest-geometry-reuse.md)
+removes repeated GPU-mesh construction when the target widget recreates the same
+mech parts. In one full-game 72 Hz pair, callback-plus-deferred host time fell
+from 6.38 to 5.84 ms; the target images matched exactly and 800 replacements
+kept geometry counts flat. The actual APK/release is unchanged. Repeat the
+timing comparison in reverse order before generalizing that 8.6% saving.
+Do not rerun the already completed runtime comparison just because its older
+protocol appears below; continue with the geometry evidence and open checks.
+
 Baseline before the current scheduling experiment: **`ba57ee4` on `vr-mode`**, fork
 [SputnikKaputtnik/MECH2JS-Quest](https://github.com/SputnikKaputtnik/MECH2JS-Quest).
 Upstream is [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS).

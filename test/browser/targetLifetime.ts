@@ -12,6 +12,8 @@ import { mechs } from '../../src/sim/mech/mechGlobals.ts';
 import { hud } from '../../src/sim/cockpit/hud.ts';
 import { hudWidget13Tick } from '../../src/sim/cockpit/targetDisplay.ts';
 import { mechApplyDetailLevel } from '../../src/sim/world/detailRecords.ts';
+import { renderPort } from '../../src/sim/display/renderPort.ts';
+import type { SceneRenderer } from '../../src/render/SceneRenderer.ts';
 
 export async function runTargetLifetimeCheck() {
   const data = await loadGameData(new FetchSource());
@@ -47,10 +49,40 @@ export async function runTargetLifetimeCheck() {
     const first = rows[0]!.geometries, peak = Math.max(...rows.map(r => r.geometries));
     if (first <= beforeTarget) throw Error('Target fixture did not allocate geometry');
     if (peak > first + 4) throw Error(`Target geometry accumulates: ${JSON.stringify({ first, peak, last: rows.at(-1) })}`);
+    // Compare the exact target-view pixels after replacement against freshly
+    // built geometry. The simulation is frozen and both calls rebuild LOD 0.
+    const view = (renderPort.current as unknown as { views: Map<number, { sr: SceneRenderer; target: THREE.WebGLRenderTarget }> }).views.get(7);
+    if (!view) throw Error('No target render surface');
+    const imageComparisons = [];
+    const ids = () => {
+      const out = new Set<number>();
+      view.sr.scene.traverse(o => { if (o instanceof THREE.Mesh) out.add(o.geometry.id); });
+      return out;
+    };
+    for (const mode of [1, 2]) {
+      hud.targetDisplayMode = mode;
+      view.sr.reuseReplacementGeometry = false;
+      mechApplyDetailLevel(target.index, 1); hudWidget13Tick(widget);
+      const { width, height } = view.target;
+      const reference = new Uint8Array(width * height * 4), reused = reference.slice();
+      renderer.readRenderTargetPixels(view.target, 0, 0, width, height, reference);
+      const beforeIds = ids();
+      view.sr.reuseReplacementGeometry = true;
+      mechApplyDetailLevel(target.index, 1); hudWidget13Tick(widget);
+      renderer.readRenderTargetPixels(view.target, 0, 0, width, height, reused);
+      let differentBytes = 0, drawnPixels = 0;
+      for (let i = 0; i < reference.length; i++) {
+        if (reference[i] !== reused[i]) differentBytes++;
+        if (i % 4 === 3 && reference[i]) drawnPixels++;
+      }
+      const reusedMeshes = [...ids()].filter(id => beforeIds.has(id)).length;
+      if (differentBytes || !drawnPixels || !reusedMeshes) throw Error(`Replacement image check failed: ${JSON.stringify({ mode, differentBytes, drawnPixels, reusedMeshes })}`);
+      imageComparisons.push({ mode, width, height, differentBytes, drawnPixels, reusedMeshes });
+    }
     screen.dispose();
     const after = { ...renderer.info.memory, programs: renderer.info.programs?.length ?? 0 };
     if (after.geometries || after.textures || after.programs) throw Error(`Target cleanup leaked: ${JSON.stringify(after)}`);
-    return { updates: rows.length, first, peak, rows, after };
+    return { updates: rows.length, first, peak, rows, imageComparisons, after };
   } finally {
     if (present) screen.dispose(); renderer.dispose(); element.remove(); game.setMode('edit'); game.audio.pause();
   }
