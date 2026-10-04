@@ -1,4 +1,4 @@
-# MECH2JS Quest — standalone VR
+# MECH2JS Quest — standalone VR for Mechwarrior 2 (DOS version)
 
 Quest 3 adaptation of [Adam4lexander/MECH2JS](https://github.com/Adam4lexander/MECH2JS), based on its `vr-mode` branch. This fork adds offline headset installation, controller pointing and a virtual keyboard, VR comfort options, a cockpit FPS counter, configurable fixed foveation and resolution, and ongoing renderer optimization toward 90 FPS.
 
